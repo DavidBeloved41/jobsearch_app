@@ -1,0 +1,64 @@
+name: jobsearch_app
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # Backend
+  supabase_flutter: ^2.5.0
+
+  # State management
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.5
+
+  # Navigation
+  go_router: ^13.2.0
+
+  # Local storage / offline
+  hive_flutter: ^1.1.0
+
+  # Secure storage
+  flutter_secure_storage: ^9.0.0
+
+  # Biometric auth
+  local_auth: ^2.1.8
+
+  # Environment variables
+  flutter_dotenv: ^5.1.0
+
+  # Utilities
+  dio: ^5.4.3
+  freezed_annotation: ^2.4.1
+  json_annotation: ^4.9.0
+  flutter_native_splash: ^2.4.7
+  file_picker: ^11.0.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  build_runner: ^2.4.9
+  riverpod_generator: ^2.4.0
+  freezed: ^2.5.2
+  json_serializable: ^6.8.0
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - .env
+    - assets/logo.png
+
+flutter_native_splash:
+  color: "#F5F5F0"
+  image: assets/logo.png
+  android_12:
+    color: "#F5F5F0"
+    image: assets/logo.png
