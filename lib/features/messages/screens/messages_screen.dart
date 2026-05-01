@@ -1,41 +1,42 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
+import 'chat_screen.dart';
 
 class MessagesScreen extends StatelessWidget {
   const MessagesScreen({super.key});
 
   final List<Map<String, dynamic>> _conversations = const [
     {
+      'id': '11111111-1111-1111-1111-111111111111',
       'name': 'Sarah Johnson',
       'role': 'Recruiter at Google',
       'message': 'Hi David, we reviewed your application...',
       'time': '10:30 AM',
       'unread': 2,
-      'avatar': Icons.person,
     },
     {
+      'id': '22222222-2222-2222-2222-222222222222',
       'name': 'Michael Chen',
       'role': 'HR Manager at Spotify',
       'message': 'Would you be available for an interview?',
       'time': 'Yesterday',
       'unread': 1,
-      'avatar': Icons.person,
     },
     {
+      'id': '33333333-3333-3333-3333-333333333333',
       'name': 'Emily Roberts',
       'role': 'Talent Acquisition at Meta',
       'message': 'Thank you for your interest in the role.',
       'time': 'Apr 20',
       'unread': 0,
-      'avatar': Icons.person,
     },
     {
+      'id': '44444444-4444-4444-4444-444444444444',
       'name': 'James Wilson',
       'role': 'CTO at Airbnb',
       'message': 'We would like to extend an offer...',
       'time': 'Apr 18',
       'unread': 0,
-      'avatar': Icons.person,
     },
   ];
 
@@ -56,10 +57,20 @@ class MessagesScreen extends StatelessWidget {
         itemCount: _conversations.length,
         itemBuilder: (context, index) {
           final chat = _conversations[index];
-          final bool hasUnread = chat['unread'] > 0;
+          final bool hasUnread = (chat['unread'] as int) > 0;
 
           return InkWell(
-            onTap: () {},
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => ChatScreen(
+                    receiverId: chat['id'] as String,
+                    receiverName: chat['name'] as String,
+                    receiverRole: chat['role'] as String,
+                  ),
+                ),
+              );
+            },
             child: Container(
               padding: const EdgeInsets.symmetric(
                 horizontal: 16,
@@ -69,7 +80,7 @@ class MessagesScreen extends StatelessWidget {
                 color: hasUnread
                     ? AppColors.primary.withValues(alpha: 0.03)
                     : AppColors.surface,
-                border: const Border(
+                border: Border(
                   bottom: BorderSide(color: AppColors.border),
                 ),
               ),
@@ -85,13 +96,12 @@ class MessagesScreen extends StatelessWidget {
                           color: AppColors.primary.withValues(alpha: 0.1),
                           shape: BoxShape.circle,
                         ),
-                        child: Icon(
-                          chat['avatar'],
+                        child: const Icon(
+                          Icons.person,
                           color: AppColors.primary,
                           size: 28,
                         ),
                       ),
-                      // Online indicator
                       Positioned(
                         right: 0,
                         bottom: 0,
@@ -121,7 +131,7 @@ class MessagesScreen extends StatelessWidget {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              chat['name'],
+                              chat['name'] as String,
                               style: TextStyle(
                                 fontSize: 15,
                                 fontWeight: hasUnread
@@ -131,7 +141,7 @@ class MessagesScreen extends StatelessWidget {
                               ),
                             ),
                             Text(
-                              chat['time'],
+                              chat['time'] as String,
                               style: TextStyle(
                                 fontSize: 12,
                                 color: hasUnread
@@ -146,7 +156,7 @@ class MessagesScreen extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          chat['role'],
+                          chat['role'] as String,
                           style: const TextStyle(
                             fontSize: 12,
                             color: AppColors.primary,
@@ -159,7 +169,7 @@ class MessagesScreen extends StatelessWidget {
                           children: [
                             Expanded(
                               child: Text(
-                                chat['message'],
+                                chat['message'] as String,
                                 style: TextStyle(
                                   fontSize: 13,
                                   color: hasUnread

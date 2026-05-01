@@ -9,6 +9,7 @@ import 'resume_screen.dart';
 import 'skills_screen.dart';
 import 'saved_jobs_screen.dart';
 import 'notifications_screen.dart';
+import 'help_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -228,10 +229,16 @@ _StatItem(label: 'Offers', value: '$_offersCount'),
                },
               ),
                   _MenuItem(
-                    icon: Icons.help_outline,
+                   icon: Icons.help_outline,
                     label: 'Help & support',
-                    onTap: () {},
-                  ),
+                     onTap: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                         builder: (_) => const HelpScreen(),
+                   ),
+                 );
+               },
+              ),
                 ],
               ),
             ),
