@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../../app/router.dart';
-import '../../../core/theme/app_colors.dart';
 import '../../../core/supabase/supabase_service.dart';
+import '../../../core/theme/app_colors.dart';
+import '../../auth/screens/login_screen.dart';
+import '../../auth/screens/signup_screen.dart';
 import 'edit_profile_screen.dart';
 import 'resume_screen.dart';
 import 'skills_screen.dart';
@@ -19,7 +19,7 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  final user = Supabase.instance.client.auth.currentUser;
+  User? user;
   int _appliedCount = 0;
   int _interviewingCount = 0;
   int _offersCount = 0;
@@ -27,24 +27,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
-    _loadStats();
+    user = Supabase.instance.client.auth.currentUser;
+    Supabase.instance.client.auth.onAuthStateChange.listen((data) {
+      if (mounted) {
+        setState(() {
+          user = data.session?.user;
+        });
+        if (user != null) _loadStats();
+      }
+    });
+    if (user != null) _loadStats();
   }
 
   Future<void> _loadStats() async {
     try {
-      final userId = Supabase.instance.client.auth.currentUser!.id;
+      final userId = user!.id;
       final applications = await SupabaseService.getApplications(userId);
-      setState(() {
-        _appliedCount = applications
-            .where((a) => a['status'] == 'applied')
-            .length;
-        _interviewingCount = applications
-            .where((a) => a['status'] == 'interviewing')
-            .length;
-        _offersCount = applications
-            .where((a) => a['status'] == 'offered')
-            .length;
-      });
+      if (mounted) {
+        setState(() {
+          _appliedCount =
+              applications.where((a) => a['status'] == 'applied').length;
+          _interviewingCount =
+              applications.where((a) => a['status'] == 'interviewing').length;
+          _offersCount =
+              applications.where((a) => a['status'] == 'offered').length;
+        });
+      }
     } catch (e) {
       debugPrint('Error loading stats: $e');
     }
@@ -52,13 +60,87 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _signOut() async {
     await Supabase.instance.client.auth.signOut();
-    if (mounted) {
-      GoRouter.of(context).go(AppRoutes.login);
-    }
   }
 
   @override
   Widget build(BuildContext context) {
+    if (user == null) {
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(title: const Text('Profile')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 100,
+                  height: 100,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.person_outline,
+                    size: 56,
+                    color: AppColors.primary,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                const Text(
+                  'Join JobSearch',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Sign in to track your applications, save jobs, message recruiters and more.',
+                  style: TextStyle(
+                    fontSize: 15,
+                    color: AppColors.textSecondary,
+                    height: 1.5,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 32),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => const LoginScreen()),
+                    );
+                  },
+                  child: const Text('Sign in'),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => const SignupScreen()),
+                    );
+                  },
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.primary,
+                    side: const BorderSide(color: AppColors.primary),
+                    minimumSize: const Size(double.infinity, 52),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text('Create account'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -73,14 +155,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
       body: SingleChildScrollView(
         child: Column(
           children: [
-            // Profile header
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(24),
               color: AppColors.surface,
               child: Column(
                 children: [
-                  // Avatar
                   Container(
                     width: 90,
                     height: 90,
@@ -95,8 +175,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-
-                  // Name
                   Text(
                     user?.userMetadata?['full_name'] ?? 'Your Name',
                     style: const TextStyle(
@@ -106,8 +184,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                   const SizedBox(height: 4),
-
-                  // Email
                   Text(
                     user?.email ?? '',
                     style: const TextStyle(
@@ -116,8 +192,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-
-                  // Open to work badge
                   Container(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 16, vertical: 6),
@@ -150,7 +224,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             const SizedBox(height: 12),
 
-            // Stats row
             Container(
               padding: const EdgeInsets.all(20),
               color: AppColors.surface,
@@ -158,94 +231,75 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
                   _StatItem(label: 'Applied', value: '$_appliedCount'),
-_Divider(),
-_StatItem(label: 'Interviews', value: '$_interviewingCount'),
-_Divider(),
-_StatItem(label: 'Offers', value: '$_offersCount'),
+                  _Divider(),
+                  _StatItem(
+                      label: 'Interviews', value: '$_interviewingCount'),
+                  _Divider(),
+                  _StatItem(label: 'Offers', value: '$_offersCount'),
                 ],
               ),
             ),
 
             const SizedBox(height: 12),
 
-            // Menu items
             Container(
               color: AppColors.surface,
               child: Column(
                 children: [
                   _MenuItem(
-                   icon: Icons.person_outlined,
+                    icon: Icons.person_outlined,
                     label: 'Edit profile',
-                     onTap: () {
-                      Navigator.of(context).push(
-                       MaterialPageRoute(
-                        builder: (_) => const EditProfileScreen(),
-                 ),
-               );
-              },
-            ),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => const EditProfileScreen()),
+                    ),
+                  ),
                   _MenuItem(
                     icon: Icons.description_outlined,
-                     label: 'My resume',
-                      onTap: () {
-                        Navigator.of(context).push(
-                         MaterialPageRoute(
-                          builder: (_) => const ResumeScreen(),
-                   ),
-                  );
-                },
-              ),
+                    label: 'My resume',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => const ResumeScreen()),
+                    ),
+                  ),
                   _MenuItem(
                     icon: Icons.school_outlined,
                     label: 'Skills & experience',
-                    onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const SkillsScreen(),
-                 ),
-               );
-             },
-            ),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => const SkillsScreen()),
+                    ),
+                  ),
                   _MenuItem(
                     icon: Icons.bookmark_outlined,
-                     label: 'Saved jobs',
-                      onTap: () {
-                       Navigator.of(context).push(
-                        MaterialPageRoute(
-                         builder: (_) => const SavedJobsScreen(),
+                    label: 'Saved jobs',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => const SavedJobsScreen()),
                     ),
-                  );
-                },
-              ),
-                 _MenuItem(
-                   icon: Icons.notifications_outlined,
-                    label: 'Notifications',
-                     onTap: () {
-                      Navigator.of(context).push(
-                       MaterialPageRoute(
-                        builder: (_) => const NotificationsScreen(),
-                   ),
-                 );
-               },
-              ),
+                  ),
                   _MenuItem(
-                   icon: Icons.help_outline,
+                    icon: Icons.notifications_outlined,
+                    label: 'Notifications',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => const NotificationsScreen()),
+                    ),
+                  ),
+                  _MenuItem(
+                    icon: Icons.help_outline,
                     label: 'Help & support',
-                     onTap: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                         builder: (_) => const HelpScreen(),
-                   ),
-                 );
-               },
-              ),
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => const HelpScreen()),
+                    ),
+                  ),
                 ],
               ),
             ),
 
             const SizedBox(height: 12),
 
-            // Sign out
             Container(
               color: AppColors.surface,
               child: _MenuItem(

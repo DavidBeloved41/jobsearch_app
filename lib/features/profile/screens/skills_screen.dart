@@ -272,7 +272,7 @@ class _SkillsScreenState extends State<SkillsScreen> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.psychology_outlined,
+                      const Icon(Icons.psychology_outlined,
                           size: 64, color: AppColors.textHint),
                       const SizedBox(height: 16),
                       const Text(

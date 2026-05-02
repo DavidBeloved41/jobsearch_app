@@ -133,14 +133,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           ? const Center(
               child: CircularProgressIndicator(color: AppColors.primary))
           : _notifications.isEmpty
-              ? Center(
+              ? const Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(Icons.notifications_none_outlined,
                           size: 64, color: AppColors.textHint),
-                      const SizedBox(height: 16),
-                      const Text(
+                      SizedBox(height: 16),
+                      Text(
                         'No notifications yet',
                         style: TextStyle(
                           fontSize: 16,
@@ -148,8 +148,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                           color: AppColors.textPrimary,
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      const Text(
+                      SizedBox(height: 8),
+                      Text(
                         'You\'ll be notified about job matches\nand application updates',
                         style: TextStyle(color: AppColors.textSecondary),
                         textAlign: TextAlign.center,
@@ -178,7 +178,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                             color: isRead
                                 ? AppColors.surface
                                 : AppColors.primary.withValues(alpha: 0.03),
-                            border: Border(
+                            border: const Border(
                               bottom:
                                   BorderSide(color: AppColors.border),
                             ),

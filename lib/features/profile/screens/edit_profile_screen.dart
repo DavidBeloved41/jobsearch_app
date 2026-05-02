@@ -218,7 +218,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                             value: _isOpenToWork,
                             onChanged: (value) =>
                                 setState(() => _isOpenToWork = value),
-                            activeColor: AppColors.primary,
+                            activeThumbColor: AppColors.primary,
                           ),
                         ],
                       ),
@@ -226,7 +226,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     const SizedBox(height: 20),
 
                     // Form fields
-                    _SectionLabel(label: 'Personal Information'),
+                    const _SectionLabel(label: 'Personal Information'),
                     const SizedBox(height: 12),
 
                     TextFormField(
@@ -264,7 +264,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     ),
                     const SizedBox(height: 24),
 
-                    _SectionLabel(label: 'Professional Information'),
+                    const _SectionLabel(label: 'Professional Information'),
                     const SizedBox(height: 12),
 
                     TextFormField(

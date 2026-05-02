@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../../app/router.dart';
 import '../../../core/theme/app_colors.dart';
+import 'login_screen.dart';
 
 class SignupScreen extends ConsumerStatefulWidget {
   const SignupScreen({super.key});
@@ -44,7 +43,6 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
       );
 
       if (response.user != null) {
-
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -52,16 +50,16 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
               backgroundColor: AppColors.success,
             ),
           );
-          GoRouter.of(context).go(AppRoutes.login);
+          onPressed:
+          () => Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (_) => const LoginScreen()),
+          );
         }
       }
     } on AuthException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.message),
-            backgroundColor: AppColors.error,
-          ),
+          SnackBar(content: Text(e.message), backgroundColor: AppColors.error),
         );
       }
     } finally {
@@ -78,7 +76,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
-          onPressed: () => GoRouter.of(context).go(AppRoutes.login),
+         onPressed: () => Navigator.of(context).pop(),
         ),
       ),
       body: SafeArea(
@@ -191,8 +189,10 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                             : Icons.visibility_off_outlined,
                       ),
                       onPressed: () {
-                        setState(() =>
-                            _obscureConfirmPassword = !_obscureConfirmPassword);
+                        setState(
+                          () => _obscureConfirmPassword =
+                              !_obscureConfirmPassword,
+                        );
                       },
                     ),
                   ),

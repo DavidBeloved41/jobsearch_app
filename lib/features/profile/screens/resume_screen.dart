@@ -295,10 +295,10 @@ class _ResumeScreenState extends State<ResumeScreen> {
                 border: Border.all(
                     color: AppColors.primary.withValues(alpha: 0.2)),
               ),
-              child: Column(
+              child: const Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Row(
+                  Row(
                     children: [
                       Icon(Icons.lightbulb_outline,
                           color: AppColors.primary, size: 20),
@@ -313,7 +313,7 @@ class _ResumeScreenState extends State<ResumeScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  SizedBox(height: 12),
                   _Tip(text: 'Keep your resume to 1-2 pages maximum'),
                   _Tip(text: 'Use action verbs to describe your experience'),
                   _Tip(text: 'Include measurable achievements'),

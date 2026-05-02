@@ -80,7 +80,7 @@ class MessagesScreen extends StatelessWidget {
                 color: hasUnread
                     ? AppColors.primary.withValues(alpha: 0.03)
                     : AppColors.surface,
-                border: Border(
+                border: const Border(
                   bottom: BorderSide(color: AppColors.border),
                 ),
               ),

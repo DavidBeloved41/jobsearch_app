@@ -64,14 +64,14 @@ class _SavedJobsScreenState extends State<SavedJobsScreen> {
           ? const Center(
               child: CircularProgressIndicator(color: AppColors.primary))
           : _savedJobs.isEmpty
-              ? Center(
+              ? const Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Icon(Icons.bookmark_border,
                           size: 64, color: AppColors.textHint),
-                      const SizedBox(height: 16),
-                      const Text(
+                      SizedBox(height: 16),
+                      Text(
                         'No saved jobs yet',
                         style: TextStyle(
                           fontSize: 16,
@@ -79,8 +79,8 @@ class _SavedJobsScreenState extends State<SavedJobsScreen> {
                           color: AppColors.textPrimary,
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      const Text(
+                      SizedBox(height: 8),
+                      Text(
                         'Bookmark jobs you\'re interested in',
                         style: TextStyle(color: AppColors.textSecondary),
                       ),

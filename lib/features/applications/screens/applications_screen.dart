@@ -93,13 +93,13 @@ class _ApplicationsScreenState extends State<ApplicationsScreen>
 
   Widget _buildList(List<Map<String, dynamic>> items, Color color) {
     if (items.isEmpty) {
-      return Center(
+      return const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(Icons.inbox_outlined, size: 64, color: AppColors.textHint),
-            const SizedBox(height: 16),
-            const Text(
+            SizedBox(height: 16),
+            Text(
               'No applications here yet',
               style: TextStyle(color: AppColors.textSecondary),
             ),

@@ -5,6 +5,8 @@ import '../../profile/screens/profile_screen.dart';
 import '../../messages/screens/messages_screen.dart';
 import '../../../core/supabase/supabase_service.dart';
 import 'job_detail_screen.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../auth/screens/login_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -220,15 +222,15 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
                       ),
                     )
                   : _jobs.isEmpty
-                      ? Center(
+                      ? const Center(
                           child: Padding(
-                            padding: const EdgeInsets.all(40),
+                            padding: EdgeInsets.all(40),
                             child: Column(
                               children: [
                                 Icon(Icons.work_off_outlined,
                                     size: 64, color: AppColors.textHint),
-                                const SizedBox(height: 16),
-                                const Text(
+                                SizedBox(height: 16),
+                                Text(
                                   'No jobs found',
                                   style: TextStyle(
                                       color: AppColors.textSecondary),
@@ -249,15 +251,15 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
       );
     },
     child: _JobCard(
-      title: job['title'] ?? '',
-      company: company?['name'] ?? '',
-      location: job['location'] ?? '',
-      salary:
-          '\$${(job['salary_min'] / 1000).toStringAsFixed(0)}k - \$${(job['salary_max'] / 1000).toStringAsFixed(0)}k',
-      workModel: job['work_model'] ?? '',
-      matchScore: 85,
-      logo: Icons.business,
-    ),
+  title: job['title'] ?? '',
+  company: company?['name'] ?? '',
+  location: job['location'] ?? '',
+  salary: '\$${(job['salary_min'] / 1000).toStringAsFixed(0)}k - \$${(job['salary_max'] / 1000).toStringAsFixed(0)}k',
+  workModel: job['work_model'] ?? '',
+  matchScore: 85,
+  logo: Icons.business,
+  jobId: job['id'] ?? '',
+),
   );
 }).toList(),
                         ),
@@ -271,7 +273,7 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
 
 
 
-class _JobCard extends StatelessWidget {
+class _JobCard extends StatefulWidget {
   final String title;
   final String company;
   final String location;
@@ -279,6 +281,7 @@ class _JobCard extends StatelessWidget {
   final String workModel;
   final int matchScore;
   final IconData logo;
+  final String jobId;
 
   const _JobCard({
     required this.title,
@@ -288,13 +291,112 @@ class _JobCard extends StatelessWidget {
     required this.workModel,
     required this.matchScore,
     required this.logo,
+    required this.jobId,
   });
 
+  @override
+  State<_JobCard> createState() => _JobCardState();
+}
+
+class _JobCardState extends State<_JobCard> {
+  bool _isSaved = false;
+
+  Future<void> _toggleSave() async {
+  final user = Supabase.instance.client.auth.currentUser;
+  if (user == null) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.lock_outline,
+                    color: AppColors.primary, size: 28),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Sign in required',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'You need to sign in to save jobs.',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: AppColors.textSecondary,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                        builder: (_) => const LoginScreen()),
+                  );
+                },
+                child: const Text('Sign in'),
+              ),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Maybe later'),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+    return;
+  }
+
+  try {
+    if (_isSaved) {
+      await SupabaseService.unsaveJob(user.id, widget.jobId);
+    } else {
+      await SupabaseService.saveJob(user.id, widget.jobId);
+    }
+    setState(() => _isSaved = !_isSaved);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_isSaved ? 'Job saved!' : 'Job removed from saved'),
+          backgroundColor: _isSaved
+              ? AppColors.success
+              : AppColors.textSecondary,
+          duration: const Duration(seconds: 1),
+        ),
+      );
+    }
+  } catch (e) {
+    debugPrint('Error toggling save: $e');
+  }
+}
+
   Color get _workModelColor {
-    switch (workModel) {
-      case 'Remote':
+    switch (widget.workModel) {
+      case 'remote':
         return AppColors.success;
-      case 'Hybrid':
+      case 'hybrid':
         return AppColors.warning;
       default:
         return AppColors.primaryLight;
@@ -316,7 +418,6 @@ class _JobCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              // Company logo
               Container(
                 width: 48,
                 height: 48,
@@ -324,17 +425,15 @@ class _JobCard extends StatelessWidget {
                   color: AppColors.primary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(logo, color: AppColors.primary, size: 28),
+                child: Icon(widget.logo, color: AppColors.primary, size: 28),
               ),
               const SizedBox(width: 12),
-
-              // Title and company
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      title,
+                      widget.title,
                       style: const TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
@@ -343,7 +442,7 @@ class _JobCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      company,
+                      widget.company,
                       style: const TextStyle(
                         fontSize: 13,
                         color: AppColors.textSecondary,
@@ -352,16 +451,15 @@ class _JobCard extends StatelessWidget {
                   ],
                 ),
               ),
-
-              // Match score
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: AppColors.primary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
-                  '$matchScore% match',
+                  '${widget.matchScore}% match',
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
@@ -372,15 +470,13 @@ class _JobCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-
-          // Location and salary
           Row(
             children: [
               const Icon(Icons.location_on_outlined,
                   size: 14, color: AppColors.textSecondary),
               const SizedBox(width: 4),
               Text(
-                location,
+                widget.location,
                 style: const TextStyle(
                   fontSize: 13,
                   color: AppColors.textSecondary,
@@ -391,7 +487,7 @@ class _JobCard extends StatelessWidget {
                   size: 14, color: AppColors.textSecondary),
               const SizedBox(width: 4),
               Text(
-                salary,
+                widget.salary,
                 style: const TextStyle(
                   fontSize: 13,
                   color: AppColors.textSecondary,
@@ -400,8 +496,6 @@ class _JobCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-
-          // Work model tag and save button
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -413,7 +507,7 @@ class _JobCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
-                  workModel,
+                  widget.workModel,
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
@@ -422,9 +516,13 @@ class _JobCard extends StatelessWidget {
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.bookmark_border,
-                    color: AppColors.textSecondary),
-                onPressed: () {},
+                icon: Icon(
+                  _isSaved ? Icons.bookmark : Icons.bookmark_border,
+                  color: _isSaved
+                      ? AppColors.primary
+                      : AppColors.textSecondary,
+                ),
+                onPressed: _toggleSave,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
               ),
@@ -435,5 +533,3 @@ class _JobCard extends StatelessWidget {
     );
   }
 }
-
-

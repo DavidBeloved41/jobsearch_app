@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/supabase/supabase_service.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../auth/screens/login_screen.dart';
 
 class JobDetailScreen extends StatefulWidget {
   final Map<String, dynamic> job;
@@ -48,50 +49,125 @@ Future<void> _checkIfApplied() async {
 }
 
   Future<void> _applyForJob() async {
-    setState(() => _isApplying = true);
-    try {
-      final userId = Supabase.instance.client.auth.currentUser!.id;
-      await SupabaseService.applyForJob(userId, widget.job['id'], null);
-      setState(() {
-        _hasApplied = true;
-        _isApplying = false;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Application submitted successfully!'),
-            backgroundColor: AppColors.success,
-          ),
-        );
-      }
-    } catch (e) {
-      setState(() => _isApplying = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString().contains('duplicate')
-                ? 'You have already applied for this job'
-                : 'Failed to apply. Please try again.'),
-            backgroundColor: AppColors.error,
-          ),
-        );
-      }
-    }
+  final user = Supabase.instance.client.auth.currentUser;
+  if (user == null) {
+    _showLoginPrompt();
+    return;
   }
 
-  Future<void> _toggleSave() async {
-    try {
-      final userId = Supabase.instance.client.auth.currentUser!.id;
-      if (_isSaved) {
-        await SupabaseService.unsaveJob(userId, widget.job['id']);
-      } else {
-        await SupabaseService.saveJob(userId, widget.job['id']);
-      }
-      setState(() => _isSaved = !_isSaved);
-    } catch (e) {
-      debugPrint('Error saving job: $e');
+  setState(() => _isApplying = true);
+  try {
+    await SupabaseService.applyForJob(user.id, widget.job['id'], null);
+    setState(() {
+      _hasApplied = true;
+      _isApplying = false;
+    });
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Application submitted successfully!'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    }
+  } catch (e) {
+    setState(() => _isApplying = false);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().contains('duplicate')
+              ? 'You have already applied for this job'
+              : 'Failed to apply. Please try again.'),
+          backgroundColor: AppColors.error,
+        ),
+      );
     }
   }
+}
+
+Future<void> _toggleSave() async {
+  final user = Supabase.instance.client.auth.currentUser;
+  if (user == null) {
+    _showLoginPrompt();
+    return;
+  }
+
+  try {
+    if (_isSaved) {
+      await SupabaseService.unsaveJob(user.id, widget.job['id']);
+    } else {
+      await SupabaseService.saveJob(user.id, widget.job['id']);
+    }
+    setState(() => _isSaved = !_isSaved);
+  } catch (e) {
+    debugPrint('Error saving job: $e');
+  }
+}
+
+void _showLoginPrompt() {
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: AppColors.surface,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (context) {
+      return Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.lock_outline,
+                  color: AppColors.primary, size: 28),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Sign in required',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'You need to sign in to apply for jobs and save them.',
+              style: TextStyle(
+                fontSize: 14,
+                color: AppColors.textSecondary,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                      builder: (_) => const LoginScreen()),
+                );
+              },
+              child: const Text('Sign in'),
+            ),
+            const SizedBox(height: 12),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Maybe later'),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      );
+    },
+  );
+}
 
   @override
   Widget build(BuildContext context) {

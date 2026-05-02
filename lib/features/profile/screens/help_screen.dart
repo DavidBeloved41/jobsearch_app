@@ -129,7 +129,7 @@ class _HelpScreenState extends State<HelpScreen> {
                 physics: const NeverScrollableScrollPhysics(),
                 itemCount: _faqs.length,
                 separatorBuilder: (context, index) =>
-                    Divider(color: AppColors.border, height: 1),
+                    const Divider(color: AppColors.border, height: 1),
                 itemBuilder: (context, index) {
                   final faq = _faqs[index];
                   final isExpanded = _expandedIndex == index;
@@ -214,19 +214,19 @@ class _HelpScreenState extends State<HelpScreen> {
                     label: 'Privacy Policy',
                     onTap: () {},
                   ),
-                  Divider(color: AppColors.border, height: 1),
+                  const Divider(color: AppColors.border, height: 1),
                   _QuickLink(
                     icon: Icons.description_outlined,
                     label: 'Terms of Service',
                     onTap: () {},
                   ),
-                  Divider(color: AppColors.border, height: 1),
+                  const Divider(color: AppColors.border, height: 1),
                   _QuickLink(
                     icon: Icons.star_outline,
                     label: 'Rate the App',
                     onTap: () {},
                   ),
-                  Divider(color: AppColors.border, height: 1),
+                  const Divider(color: AppColors.border, height: 1),
                   _QuickLink(
                     icon: Icons.share_outlined,
                     label: 'Share with Friends',
@@ -238,10 +238,10 @@ class _HelpScreenState extends State<HelpScreen> {
             const SizedBox(height: 24),
 
             // App version
-            Center(
+            const Center(
               child: Text(
                 'JobSearch App v1.0.0',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
                   color: AppColors.textHint,
                 ),
