@@ -25,13 +25,11 @@ class _SkillsScreenState extends State<SkillsScreen> {
     try {
       final userId = Supabase.instance.client.auth.currentUser!.id;
 
-      // Load all available skills
       final allSkills = await Supabase.instance.client
           .from('skills')
           .select()
           .order('name');
 
-      // Load user's skills
       final userSkills = await Supabase.instance.client
           .from('profile_skills')
           .select('*, skills(name, category)')
@@ -48,7 +46,8 @@ class _SkillsScreenState extends State<SkillsScreen> {
     }
   }
 
-  Future<void> _addSkill(Map<String, dynamic> skill, String proficiency) async {
+  Future<void> _addSkill(
+      Map<String, dynamic> skill, String proficiency) async {
     try {
       final userId = Supabase.instance.client.auth.currentUser!.id;
       await Supabase.instance.client.from('profile_skills').insert({
@@ -77,7 +76,8 @@ class _SkillsScreenState extends State<SkillsScreen> {
     }
   }
 
-  Future<void> _deleteSkill(String profileSkillId, String skillName) async {
+  Future<void> _deleteSkill(
+      String profileSkillId, String skillName) async {
     try {
       await Supabase.instance.client
           .from('profile_skills')
@@ -101,13 +101,10 @@ class _SkillsScreenState extends State<SkillsScreen> {
     String? selectedSkillId;
     String selectedProficiency = 'intermediate';
 
-    // Filter out skills already added
-    final addedSkillIds = _userSkills
-        .map((s) => s['skill_id'] as String)
-        .toSet();
-    final availableSkills = _allSkills
-        .where((s) => !addedSkillIds.contains(s['id']))
-        .toList();
+    final addedSkillIds =
+        _userSkills.map((s) => s['skill_id'] as String).toSet();
+    final availableSkills =
+        _allSkills.where((s) => !addedSkillIds.contains(s['id'])).toList();
 
     if (availableSkills.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -122,7 +119,7 @@ class _SkillsScreenState extends State<SkillsScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: AppColors.surface,
+      backgroundColor: AppColors.surf(context),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -140,26 +137,34 @@ class _SkillsScreenState extends State<SkillsScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Add Skill',
                     style: TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
-                      color: AppColors.textPrimary,
+                      color: AppColors.text(context),
                     ),
                   ),
                   const SizedBox(height: 16),
 
                   // Skill dropdown
                   DropdownButtonFormField<String>(
-                    decoration: const InputDecoration(
+                    dropdownColor: AppColors.surf(context),
+                    style: TextStyle(color: AppColors.text(context)),
+                    decoration: InputDecoration(
                       labelText: 'Select skill',
-                      prefixIcon: Icon(Icons.code_outlined),
+                      prefixIcon: Icon(
+                        Icons.code_outlined,
+                        color: AppColors.textSec(context),
+                      ),
                     ),
                     items: availableSkills.map((skill) {
                       return DropdownMenuItem<String>(
                         value: skill['id'] as String,
-                        child: Text(skill['name'] as String),
+                        child: Text(
+                          skill['name'] as String,
+                          style: TextStyle(color: AppColors.text(context)),
+                        ),
                       );
                     }).toList(),
                     onChanged: (value) {
@@ -169,35 +174,39 @@ class _SkillsScreenState extends State<SkillsScreen> {
                   const SizedBox(height: 16),
 
                   // Proficiency level
-                  const Text(
+                  Text(
                     'Proficiency level',
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
-                      color: AppColors.textSecondary,
+                      color: AppColors.textSec(context),
                     ),
                   ),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
-                    children: ['beginner', 'intermediate', 'advanced', 'expert']
-                        .map((level) {
+                    children: [
+                      'beginner',
+                      'intermediate',
+                      'advanced',
+                      'expert'
+                    ].map((level) {
                       final isSelected = selectedProficiency == level;
                       return GestureDetector(
-                        onTap: () =>
-                            setModalState(() => selectedProficiency = level),
+                        onTap: () => setModalState(
+                            () => selectedProficiency = level),
                         child: Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 14, vertical: 8),
                           decoration: BoxDecoration(
                             color: isSelected
                                 ? AppColors.primary
-                                : AppColors.background,
+                                : AppColors.bg(context),
                             borderRadius: BorderRadius.circular(20),
                             border: Border.all(
                               color: isSelected
                                   ? AppColors.primary
-                                  : AppColors.border,
+                                  : AppColors.bord(context),
                             ),
                           ),
                           child: Text(
@@ -206,7 +215,7 @@ class _SkillsScreenState extends State<SkillsScreen> {
                               fontSize: 13,
                               color: isSelected
                                   ? Colors.white
-                                  : AppColors.textSecondary,
+                                  : AppColors.textSec(context),
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -247,14 +256,14 @@ class _SkillsScreenState extends State<SkillsScreen> {
       case 'expert':
         return const Color(0xFF7C3AED);
       default:
-        return AppColors.textSecondary;
+        return AppColors.primary;
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: AppColors.bg(context),
       appBar: AppBar(
         title: const Text('Skills & Experience'),
         actions: [
@@ -265,28 +274,36 @@ class _SkillsScreenState extends State<SkillsScreen> {
         ],
       ),
       body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(color: AppColors.primary))
+          ? Center(
+              child: CircularProgressIndicator(
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            )
           : _userSkills.isEmpty
               ? Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.psychology_outlined,
-                          size: 64, color: AppColors.textHint),
+                      Icon(
+                        Icons.psychology_outlined,
+                        size: 64,
+                        color: AppColors.textSec(context),
+                      ),
                       const SizedBox(height: 16),
-                      const Text(
+                      Text(
                         'No skills added yet',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary,
+                          color: AppColors.text(context),
                         ),
                       ),
                       const SizedBox(height: 8),
-                      const Text(
+                      Text(
                         'Add your skills to improve job matches',
-                        style: TextStyle(color: AppColors.textSecondary),
+                        style: TextStyle(
+                          color: AppColors.textSec(context),
+                        ),
                       ),
                       const SizedBox(height: 24),
                       ElevatedButton.icon(
@@ -302,17 +319,19 @@ class _SkillsScreenState extends State<SkillsScreen> {
                   itemCount: _userSkills.length,
                   itemBuilder: (context, index) {
                     final item = _userSkills[index];
-                    final skill = item['skills'] as Map<String, dynamic>?;
-                    final proficiency = item['proficiency_level'] as String?;
+                    final skill =
+                        item['skills'] as Map<String, dynamic>?;
+                    final proficiency =
+                        item['proficiency_level'] as String?;
                     final color = _getProficiencyColor(proficiency);
 
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12),
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: AppColors.surface,
+                        color: AppColors.surf(context),
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AppColors.border),
+                        border: Border.all(color: AppColors.bord(context)),
                       ),
                       child: Row(
                         children: [
@@ -332,10 +351,10 @@ class _SkillsScreenState extends State<SkillsScreen> {
                               children: [
                                 Text(
                                   skill?['name'] ?? '',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 15,
                                     fontWeight: FontWeight.w600,
-                                    color: AppColors.textPrimary,
+                                    color: AppColors.text(context),
                                   ),
                                 ),
                                 const SizedBox(height: 4),
@@ -345,12 +364,15 @@ class _SkillsScreenState extends State<SkillsScreen> {
                                       padding: const EdgeInsets.symmetric(
                                           horizontal: 8, vertical: 2),
                                       decoration: BoxDecoration(
-                                        color: color.withValues(alpha: 0.1),
-                                        borderRadius: BorderRadius.circular(10),
+                                        color:
+                                            color.withValues(alpha: 0.1),
+                                        borderRadius:
+                                            BorderRadius.circular(10),
                                       ),
                                       child: Text(
                                         proficiency != null
-                                            ? proficiency[0].toUpperCase() +
+                                            ? proficiency[0]
+                                                    .toUpperCase() +
                                                 proficiency.substring(1)
                                             : '',
                                         style: TextStyle(
@@ -363,9 +385,9 @@ class _SkillsScreenState extends State<SkillsScreen> {
                                     const SizedBox(width: 8),
                                     Text(
                                       skill?['category'] ?? '',
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 12,
-                                        color: AppColors.textSecondary,
+                                        color: AppColors.textSec(context),
                                       ),
                                     ),
                                   ],
@@ -374,8 +396,11 @@ class _SkillsScreenState extends State<SkillsScreen> {
                             ),
                           ),
                           IconButton(
-                            icon: const Icon(Icons.delete_outline,
-                                color: AppColors.error, size: 20),
+                            icon: const Icon(
+                              Icons.delete_outline,
+                              color: AppColors.error,
+                              size: 20,
+                            ),
                             onPressed: () => _deleteSkill(
                               item['id'] as String,
                               skill?['name'] ?? '',

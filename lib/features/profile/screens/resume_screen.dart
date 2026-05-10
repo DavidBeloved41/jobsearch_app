@@ -16,7 +16,6 @@ class _ResumeScreenState extends State<ResumeScreen> {
   String? _resumeName;
   String? _uploadDate;
   bool _isUploading = false;
-  String? _resumeUrl;
 
   @override
   void initState() {
@@ -31,7 +30,6 @@ class _ResumeScreenState extends State<ResumeScreen> {
       if (profile != null && profile['resume_url'] != null) {
         setState(() {
           _hasResume = true;
-          _resumeUrl = profile['resume_url'];
           _resumeName = 'My Resume';
           _uploadDate = 'Previously uploaded';
         });
@@ -90,8 +88,8 @@ class _ResumeScreenState extends State<ResumeScreen> {
       setState(() {
         _hasResume = true;
         _resumeName = file.name;
-        _uploadDate = '${DateTime.now().day} Apr ${DateTime.now().year}';
-        _resumeUrl = url;
+        _uploadDate =
+            '${DateTime.now().day} ${_monthName(DateTime.now().month)} ${DateTime.now().year}';
         _isUploading = false;
       });
 
@@ -116,6 +114,24 @@ class _ResumeScreenState extends State<ResumeScreen> {
     }
   }
 
+  String _monthName(int month) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return months[month - 1];
+  }
+
   Future<void> _deleteResume() async {
     try {
       final userId = Supabase.instance.client.auth.currentUser!.id;
@@ -127,7 +143,6 @@ class _ResumeScreenState extends State<ResumeScreen> {
         _hasResume = false;
         _resumeName = null;
         _uploadDate = null;
-        _resumeUrl = null;
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -152,23 +167,21 @@ class _ResumeScreenState extends State<ResumeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: const Text('My Resume'),
-      ),
+      backgroundColor: AppColors.bg(context),
+      appBar: AppBar(title: const Text('My Resume')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Resume card
+            // ── Resume card ───────────────────────────────────────────────
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: AppColors.surface,
+                color: AppColors.surf(context),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.border),
+                border: Border.all(color: AppColors.bord(context)),
               ),
               child: _hasResume
                   ? Column(
@@ -196,25 +209,27 @@ class _ResumeScreenState extends State<ResumeScreen> {
                                 children: [
                                   Text(
                                     _resumeName ?? 'Resume',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 15,
                                       fontWeight: FontWeight.w600,
-                                      color: AppColors.textPrimary,
+                                      color: AppColors.text(context),
                                     ),
                                   ),
                                   Text(
                                     'Uploaded $_uploadDate',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 13,
-                                      color: AppColors.textSecondary,
+                                      color: AppColors.textSec(context),
                                     ),
                                   ),
                                 ],
                               ),
                             ),
                             IconButton(
-                              icon: const Icon(Icons.delete_outline,
-                                  color: AppColors.error),
+                              icon: const Icon(
+                                Icons.delete_outline,
+                                color: AppColors.error,
+                              ),
                               onPressed: _deleteResume,
                             ),
                           ],
@@ -248,20 +263,20 @@ class _ResumeScreenState extends State<ResumeScreen> {
                           ),
                         ),
                         const SizedBox(height: 16),
-                        const Text(
+                        Text(
                           'No resume uploaded yet',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
-                            color: AppColors.textPrimary,
+                            color: AppColors.text(context),
                           ),
                         ),
                         const SizedBox(height: 8),
-                        const Text(
+                        Text(
                           'Upload your resume to apply for jobs faster',
                           style: TextStyle(
                             fontSize: 14,
-                            color: AppColors.textSecondary,
+                            color: AppColors.textSec(context),
                           ),
                           textAlign: TextAlign.center,
                         ),
@@ -279,29 +294,34 @@ class _ResumeScreenState extends State<ResumeScreen> {
                                 )
                               : const Icon(Icons.upload_outlined),
                           label: Text(
-                              _isUploading ? 'Uploading...' : 'Upload Resume'),
+                            _isUploading ? 'Uploading...' : 'Upload Resume',
+                          ),
                         ),
                       ],
                     ),
             ),
             const SizedBox(height: 20),
 
-            // Tips section
+            // ── Tips section ──────────────────────────────────────────────
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: AppColors.primary.withValues(alpha: 0.05),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                    color: AppColors.primary.withValues(alpha: 0.2)),
+                  color: AppColors.primary.withValues(alpha: 0.2),
+                ),
               ),
               child: const Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.lightbulb_outline,
-                          color: AppColors.primary, size: 20),
+                      Icon(
+                        Icons.lightbulb_outline,
+                        color: AppColors.primary,
+                        size: 20,
+                      ),
                       SizedBox(width: 8),
                       Text(
                         'Resume Tips',
@@ -314,27 +334,28 @@ class _ResumeScreenState extends State<ResumeScreen> {
                     ],
                   ),
                   SizedBox(height: 12),
-                  _Tip(text: 'Keep your resume to 1-2 pages maximum'),
+                  _Tip(text: 'Keep your resume to 1–2 pages maximum'),
                   _Tip(text: 'Use action verbs to describe your experience'),
                   _Tip(text: 'Include measurable achievements'),
                   _Tip(text: 'Tailor your resume for each job application'),
                   _Tip(
-                      text:
-                          'Use a clean, professional format for ATS compatibility'),
+                    text:
+                        'Use a clean, professional format for ATS compatibility',
+                  ),
                 ],
               ),
             ),
             const SizedBox(height: 20),
 
-            // Supported formats
+            // ── Supported formats ─────────────────────────────────────────
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: AppColors.surface,
+                color: AppColors.surf(context),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.border),
+                border: Border.all(color: AppColors.bord(context)),
               ),
-              child: const Column(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
@@ -342,11 +363,11 @@ class _ResumeScreenState extends State<ResumeScreen> {
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary,
+                      color: AppColors.text(context),
                     ),
                   ),
-                  SizedBox(height: 12),
-                  Row(
+                  const SizedBox(height: 12),
+                  const Row(
                     children: [
                       _FormatChip(label: 'PDF'),
                       SizedBox(width: 8),
@@ -355,12 +376,12 @@ class _ResumeScreenState extends State<ResumeScreen> {
                       _FormatChip(label: 'DOC'),
                     ],
                   ),
-                  SizedBox(height: 8),
+                  const SizedBox(height: 8),
                   Text(
                     'Maximum file size: 5MB',
                     style: TextStyle(
                       fontSize: 13,
-                      color: AppColors.textSecondary,
+                      color: AppColors.textSec(context),
                     ),
                   ),
                 ],
@@ -386,16 +407,16 @@ class _Tip extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.check_circle_outline,
-              size: 16, color: AppColors.primary),
+          const Icon(
+            Icons.check_circle_outline,
+            size: 16,
+            color: AppColors.primary,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               text,
-              style: const TextStyle(
-                fontSize: 13,
-                color: AppColors.textSecondary,
-              ),
+              style: TextStyle(fontSize: 13, color: AppColors.textSec(context)),
             ),
           ),
         ],
@@ -414,16 +435,16 @@ class _FormatChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: AppColors.background,
+        color: AppColors.bg(context),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: AppColors.bord(context)),
       ),
       child: Text(
         label,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 13,
           fontWeight: FontWeight.w500,
-          color: AppColors.textSecondary,
+          color: AppColors.textSec(context),
         ),
       ),
     );

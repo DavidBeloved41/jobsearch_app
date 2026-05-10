@@ -50,8 +50,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
               backgroundColor: AppColors.success,
             ),
           );
-          onPressed:
-          () => Navigator.of(context).pushReplacement(
+          Navigator.of(context).pushReplacement(
             MaterialPageRoute(builder: (_) => const LoginScreen()),
           );
         }
@@ -76,7 +75,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
-         onPressed: () => Navigator.of(context).pop(),
+          onPressed: () => Navigator.of(context).pop(),
         ),
       ),
       body: SafeArea(

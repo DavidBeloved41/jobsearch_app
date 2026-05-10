@@ -45,9 +45,7 @@ class _ApplicationsScreenState extends State<ApplicationsScreen>
   }
 
   List<Map<String, dynamic>> _filterByStatus(String status) {
-    return _applications
-        .where((app) => app['status'] == status)
-        .toList();
+    return _applications.where((app) => app['status'] == status).toList();
   }
 
   @override
@@ -58,14 +56,14 @@ class _ApplicationsScreenState extends State<ApplicationsScreen>
     final declined = _filterByStatus('declined');
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: AppColors.bg(context),
       appBar: AppBar(
         title: const Text('Applications'),
         bottom: TabBar(
           controller: _tabController,
           isScrollable: true,
           labelColor: AppColors.primary,
-          unselectedLabelColor: AppColors.textSecondary,
+          unselectedLabelColor: AppColors.textSec(context),
           indicatorColor: AppColors.primary,
           tabs: [
             Tab(text: 'Applied (${applied.length})'),
@@ -93,15 +91,16 @@ class _ApplicationsScreenState extends State<ApplicationsScreen>
 
   Widget _buildList(List<Map<String, dynamic>> items, Color color) {
     if (items.isEmpty) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.inbox_outlined, size: 64, color: AppColors.textHint),
-            SizedBox(height: 16),
+            Icon(Icons.inbox_outlined,
+                size: 64, color: AppColors.textSec(context)),
+            const SizedBox(height: 16),
             Text(
               'No applications here yet',
-              style: TextStyle(color: AppColors.textSecondary),
+              style: TextStyle(color: AppColors.textSec(context)),
             ),
           ],
         ),
@@ -126,9 +125,9 @@ class _ApplicationsScreenState extends State<ApplicationsScreen>
             child: Container(
               margin: const EdgeInsets.only(bottom: 12),
               decoration: BoxDecoration(
-                color: AppColors.surface,
+                color: AppColors.surf(context),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.border),
+                border: Border.all(color: AppColors.bord(context)),
               ),
               child: IntrinsicHeight(
                 child: Row(
@@ -156,18 +155,18 @@ class _ApplicationsScreenState extends State<ApplicationsScreen>
                                 children: [
                                   Text(
                                     job?['title'] ?? '',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 15,
                                       fontWeight: FontWeight.w600,
-                                      color: AppColors.textPrimary,
+                                      color: AppColors.text(context),
                                     ),
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
                                     company?['name'] ?? '',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 13,
-                                      color: AppColors.textSecondary,
+                                      color: AppColors.textSec(context),
                                     ),
                                   ),
                                 ],
@@ -175,9 +174,9 @@ class _ApplicationsScreenState extends State<ApplicationsScreen>
                             ),
                             Text(
                               formattedDate,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12,
-                                color: AppColors.textHint,
+                                color: AppColors.textSec(context),
                               ),
                             ),
                           ],

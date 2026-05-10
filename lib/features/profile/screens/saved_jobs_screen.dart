@@ -56,33 +56,41 @@ class _SavedJobsScreenState extends State<SavedJobsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: AppColors.bg(context),
       appBar: AppBar(
         title: const Text('Saved Jobs'),
       ),
       body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(color: AppColors.primary))
+          ? Center(
+              child: CircularProgressIndicator(
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            )
           : _savedJobs.isEmpty
-              ? const Center(
+              ? Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.bookmark_border,
-                          size: 64, color: AppColors.textHint),
-                      SizedBox(height: 16),
+                      Icon(
+                        Icons.bookmark_border,
+                        size: 64,
+                        color: AppColors.textSec(context),
+                      ),
+                      const SizedBox(height: 16),
                       Text(
                         'No saved jobs yet',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary,
+                          color: AppColors.text(context),
                         ),
                       ),
-                      SizedBox(height: 8),
+                      const SizedBox(height: 8),
                       Text(
                         'Bookmark jobs you\'re interested in',
-                        style: TextStyle(color: AppColors.textSecondary),
+                        style: TextStyle(
+                          color: AppColors.textSec(context),
+                        ),
                       ),
                     ],
                   ),
@@ -98,8 +106,8 @@ class _SavedJobsScreenState extends State<SavedJobsScreen> {
                           savedJob['jobs'] as Map<String, dynamic>?;
                       final company =
                           job?['companies'] as Map<String, dynamic>?;
-                      final userId = Supabase
-                          .instance.client.auth.currentUser!.id;
+                      final userId =
+                          Supabase.instance.client.auth.currentUser!.id;
 
                       return GestureDetector(
                         onTap: () {
@@ -115,9 +123,11 @@ class _SavedJobsScreenState extends State<SavedJobsScreen> {
                           margin: const EdgeInsets.only(bottom: 12),
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: AppColors.surface,
+                            color: AppColors.surf(context),
                             borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: AppColors.border),
+                            border: Border.all(
+                              color: AppColors.bord(context),
+                            ),
                           ),
                           child: Row(
                             children: [
@@ -125,12 +135,19 @@ class _SavedJobsScreenState extends State<SavedJobsScreen> {
                                 width: 48,
                                 height: 48,
                                 decoration: BoxDecoration(
-                                  color: AppColors.primary
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .primary
                                       .withValues(alpha: 0.1),
                                   borderRadius: BorderRadius.circular(12),
                                 ),
-                                child: const Icon(Icons.business,
-                                    color: AppColors.primary, size: 28),
+                                child: Icon(
+                                  Icons.business,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .primary,
+                                  size: 28,
+                                ),
                               ),
                               const SizedBox(width: 12),
                               Expanded(
@@ -140,33 +157,35 @@ class _SavedJobsScreenState extends State<SavedJobsScreen> {
                                   children: [
                                     Text(
                                       job?['title'] ?? '',
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 15,
                                         fontWeight: FontWeight.w600,
-                                        color: AppColors.textPrimary,
+                                        color: AppColors.text(context),
                                       ),
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
                                       company?['name'] ?? '',
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 13,
-                                        color: AppColors.textSecondary,
+                                        color: AppColors.textSec(context),
                                       ),
                                     ),
                                     const SizedBox(height: 4),
                                     Row(
                                       children: [
-                                        const Icon(
-                                            Icons.location_on_outlined,
-                                            size: 12,
-                                            color: AppColors.textSecondary),
+                                        Icon(
+                                          Icons.location_on_outlined,
+                                          size: 12,
+                                          color: AppColors.textSec(context),
+                                        ),
                                         const SizedBox(width: 4),
                                         Text(
                                           job?['location'] ?? '',
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontSize: 12,
-                                            color: AppColors.textSecondary,
+                                            color:
+                                                AppColors.textSec(context),
                                           ),
                                         ),
                                       ],
@@ -175,10 +194,14 @@ class _SavedJobsScreenState extends State<SavedJobsScreen> {
                                 ),
                               ),
                               IconButton(
-                                icon: const Icon(Icons.bookmark,
-                                    color: AppColors.primary),
-                                onPressed: () => _unsaveJob(
-                                    userId, job?['id'] ?? ''),
+                                icon: Icon(
+                                  Icons.bookmark,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .primary,
+                                ),
+                                onPressed: () =>
+                                    _unsaveJob(userId, job?['id'] ?? ''),
                               ),
                             ],
                           ),

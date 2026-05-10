@@ -19,174 +19,176 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   bool _hasApplied = false;
 
   @override
-void initState() {
-  super.initState();
-  _checkIfSaved();
-  _checkIfApplied();
-}
-
-Future<void> _checkIfSaved() async {
-  try {
-    final userId = Supabase.instance.client.auth.currentUser!.id;
-    final saved = await SupabaseService.getSavedJobs(userId);
-    final isSaved = saved.any((s) => s['job_id'] == widget.job['id']);
-    setState(() => _isSaved = isSaved);
-  } catch (e) {
-    debugPrint('Error checking saved: $e');
+  void initState() {
+    super.initState();
+    _checkIfSaved();
+    _checkIfApplied();
   }
-}
 
-Future<void> _checkIfApplied() async {
-  try {
-    final userId = Supabase.instance.client.auth.currentUser!.id;
-    final applications = await SupabaseService.getApplications(userId);
-    final hasApplied =
-        applications.any((a) => a['job_id'] == widget.job['id']);
-    setState(() => _hasApplied = hasApplied);
-  } catch (e) {
-    debugPrint('Error checking application: $e');
+  Future<void> _checkIfSaved() async {
+    try {
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (userId == null) return;
+      final saved = await SupabaseService.getSavedJobs(userId);
+      final isSaved = saved.any((s) => s['job_id'] == widget.job['id']);
+      setState(() => _isSaved = isSaved);
+    } catch (e) {
+      debugPrint('Error checking saved: $e');
+    }
   }
-}
+
+  Future<void> _checkIfApplied() async {
+    try {
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (userId == null) return;
+      final applications = await SupabaseService.getApplications(userId);
+      final hasApplied =
+          applications.any((a) => a['job_id'] == widget.job['id']);
+      setState(() => _hasApplied = hasApplied);
+    } catch (e) {
+      debugPrint('Error checking application: $e');
+    }
+  }
 
   Future<void> _applyForJob() async {
-  final user = Supabase.instance.client.auth.currentUser;
-  if (user == null) {
-    _showLoginPrompt();
-    return;
-  }
-
-  setState(() => _isApplying = true);
-  try {
-    await SupabaseService.applyForJob(user.id, widget.job['id'], null);
-    setState(() {
-      _hasApplied = true;
-      _isApplying = false;
-    });
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Application submitted successfully!'),
-          backgroundColor: AppColors.success,
-        ),
-      );
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) {
+      _showLoginPrompt();
+      return;
     }
-  } catch (e) {
-    setState(() => _isApplying = false);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.toString().contains('duplicate')
-              ? 'You have already applied for this job'
-              : 'Failed to apply. Please try again.'),
-          backgroundColor: AppColors.error,
-        ),
-      );
+
+    setState(() => _isApplying = true);
+    try {
+      await SupabaseService.applyForJob(user.id, widget.job['id'], null);
+      setState(() {
+        _hasApplied = true;
+        _isApplying = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Application submitted successfully!'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() => _isApplying = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString().contains('duplicate')
+                ? 'You have already applied for this job'
+                : 'Failed to apply. Please try again.'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
     }
   }
-}
 
-Future<void> _toggleSave() async {
-  final user = Supabase.instance.client.auth.currentUser;
-  if (user == null) {
-    _showLoginPrompt();
-    return;
-  }
-
-  try {
-    if (_isSaved) {
-      await SupabaseService.unsaveJob(user.id, widget.job['id']);
-    } else {
-      await SupabaseService.saveJob(user.id, widget.job['id']);
+  Future<void> _toggleSave() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) {
+      _showLoginPrompt();
+      return;
     }
-    setState(() => _isSaved = !_isSaved);
-  } catch (e) {
-    debugPrint('Error saving job: $e');
-  }
-}
 
-void _showLoginPrompt() {
-  showModalBottomSheet(
-    context: context,
-    backgroundColor: AppColors.surface,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-    ),
-    builder: (context) {
-      return Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 56,
-              height: 56,
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
+    try {
+      if (_isSaved) {
+        await SupabaseService.unsaveJob(user.id, widget.job['id']);
+      } else {
+        await SupabaseService.saveJob(user.id, widget.job['id']);
+      }
+      setState(() => _isSaved = !_isSaved);
+    } catch (e) {
+      debugPrint('Error saving job: $e');
+    }
+  }
+
+  void _showLoginPrompt() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surf(context),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.lock_outline,
+                    color: AppColors.primary, size: 28),
               ),
-              child: const Icon(Icons.lock_outline,
-                  color: AppColors.primary, size: 28),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Sign in required',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary,
+              const SizedBox(height: 16),
+              Text(
+                'Sign in required',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.text(context),
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'You need to sign in to apply for jobs and save them.',
-              style: TextStyle(
-                fontSize: 14,
-                color: AppColors.textSecondary,
+              const SizedBox(height: 8),
+              Text(
+                'You need to sign in to apply for jobs and save them.',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: AppColors.textSec(context),
+                ),
+                textAlign: TextAlign.center,
               ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                      builder: (_) => const LoginScreen()),
-                );
-              },
-              child: const Text('Sign in'),
-            ),
-            const SizedBox(height: 12),
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Maybe later'),
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      );
-    },
-  );
-}
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                        builder: (_) => const LoginScreen()),
+                  );
+                },
+                child: const Text('Sign in'),
+              ),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Maybe later'),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final company =
-        widget.job['companies'] as Map<String, dynamic>?;
+    final company = widget.job['companies'] as Map<String, dynamic>?;
     final workModel = widget.job['work_model'] ?? '';
     final salaryMin = widget.job['salary_min'] ?? 0;
     final salaryMax = widget.job['salary_max'] ?? 0;
     final currency = widget.job['salary_currency'] ?? 'USD';
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: AppColors.bg(context),
       appBar: AppBar(
         title: const Text('Job Details'),
         actions: [
           IconButton(
             icon: Icon(
               _isSaved ? Icons.bookmark : Icons.bookmark_border,
-              color: _isSaved ? AppColors.primary : AppColors.textSecondary,
+              color:
+                  _isSaved ? AppColors.primary : AppColors.textSec(context),
             ),
             onPressed: _toggleSave,
           ),
@@ -202,9 +204,9 @@ void _showLoginPrompt() {
               width: double.infinity,
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: AppColors.surface,
+                color: AppColors.surf(context),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.border),
+                border: Border.all(color: AppColors.bord(context)),
               ),
               child: Column(
                 children: [
@@ -221,19 +223,19 @@ void _showLoginPrompt() {
                   const SizedBox(height: 16),
                   Text(
                     widget.job['title'] ?? '',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
-                      color: AppColors.textPrimary,
+                      color: AppColors.text(context),
                     ),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 8),
                   Text(
                     company?['name'] ?? '',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 16,
-                      color: AppColors.textSecondary,
+                      color: AppColors.textSec(context),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -267,28 +269,27 @@ void _showLoginPrompt() {
               width: double.infinity,
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: AppColors.surface,
+                color: AppColors.surf(context),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.border),
+                border: Border.all(color: AppColors.bord(context)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'About the role',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
-                      color: AppColors.textPrimary,
+                      color: AppColors.text(context),
                     ),
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    widget.job['description'] ??
-                        'No description available.',
-                    style: const TextStyle(
+                    widget.job['description'] ?? 'No description available.',
+                    style: TextStyle(
                       fontSize: 14,
-                      color: AppColors.textSecondary,
+                      color: AppColors.textSec(context),
                       height: 1.6,
                     ),
                   ),
@@ -302,19 +303,19 @@ void _showLoginPrompt() {
               width: double.infinity,
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: AppColors.surface,
+                color: AppColors.surf(context),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.border),
+                border: Border.all(color: AppColors.bord(context)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Job details',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
-                      color: AppColors.textPrimary,
+                      color: AppColors.text(context),
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -336,8 +337,7 @@ void _showLoginPrompt() {
                   _DetailRow(
                     icon: Icons.star_outline,
                     label: 'Company rating',
-                    value:
-                        '${company?['average_rating'] ?? 'N/A'} / 5.0',
+                    value: '${company?['average_rating'] ?? 'N/A'} / 5.0',
                   ),
                 ],
               ),
@@ -374,20 +374,20 @@ class _InfoChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: AppColors.background,
+        color: AppColors.bg(context),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: AppColors.bord(context)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: AppColors.textSecondary),
+          Icon(icon, size: 14, color: AppColors.textSec(context)),
           const SizedBox(width: 4),
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
-              color: AppColors.textSecondary,
+              color: AppColors.textSec(context),
             ),
           ),
         ],
@@ -420,17 +420,17 @@ class _DetailRow extends StatelessWidget {
             children: [
               Text(
                 label,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
-                  color: AppColors.textSecondary,
+                  color: AppColors.textSec(context),
                 ),
               ),
               Text(
                 value,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
-                  color: AppColors.textPrimary,
+                  color: AppColors.text(context),
                 ),
               ),
             ],

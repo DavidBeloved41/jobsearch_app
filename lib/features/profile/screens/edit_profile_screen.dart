@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/supabase/supabase_service.dart';
 import '../../../core/theme/app_colors.dart';
@@ -21,6 +22,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   bool _isLoading = false;
   bool _isFetching = true;
   bool _isOpenToWork = true;
+  String? _profilePhotoUrl;
+  bool _isUploadingPhoto = false;
 
   @override
   void initState() {
@@ -51,12 +54,117 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         _jobTitleController.text = profile['job_title'] ?? '';
         _yearsOfExperienceController.text =
             profile['years_of_experience']?.toString() ?? '';
-        setState(() => _isOpenToWork = profile['is_open_to_work'] ?? true);
+        setState(() {
+          _isOpenToWork = profile['is_open_to_work'] ?? true;
+          _profilePhotoUrl = profile['profile_photo_url'];
+        });
       }
     } catch (e) {
       debugPrint('Error loading profile: $e');
     } finally {
       setState(() => _isFetching = false);
+    }
+  }
+
+  Future<void> _pickAndUploadPhoto() async {
+    try {
+      final picker = ImagePicker();
+
+      final source = await showDialog<ImageSource>(
+        context: context,
+        builder: (context) {
+          final theme = Theme.of(context);
+          return AlertDialog(
+            backgroundColor: theme.colorScheme.surface,
+            title: Text(
+              'Select photo',
+              style: TextStyle(color: theme.colorScheme.onSurface),
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: Icon(Icons.photo_library,
+                      color: theme.colorScheme.onSurface),
+                  title: Text('Gallery',
+                      style:
+                          TextStyle(color: theme.colorScheme.onSurface)),
+                  onTap: () =>
+                      Navigator.pop(context, ImageSource.gallery),
+                ),
+                ListTile(
+                  leading: Icon(Icons.camera_alt,
+                      color: theme.colorScheme.onSurface),
+                  title: Text('Camera',
+                      style:
+                          TextStyle(color: theme.colorScheme.onSurface)),
+                  onTap: () =>
+                      Navigator.pop(context, ImageSource.camera),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+
+      if (source == null) return;
+
+      final image = await picker.pickImage(
+        source: source,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 80,
+      );
+
+      if (image == null) return;
+
+      setState(() => _isUploadingPhoto = true);
+
+      final userId = Supabase.instance.client.auth.currentUser!.id;
+      final bytes = await image.readAsBytes();
+      final fileName = '$userId/avatar.jpg';
+
+      await Supabase.instance.client.storage.from('avatars').uploadBinary(
+            fileName,
+            bytes,
+            fileOptions: const FileOptions(
+              contentType: 'image/jpeg',
+              upsert: true,
+            ),
+          );
+
+      final url = Supabase.instance.client.storage
+          .from('avatars')
+          .getPublicUrl(fileName);
+
+      await SupabaseService.updateProfile(userId, {
+        'profile_photo_url': url,
+        'updated_at': DateTime.now().toIso8601String(),
+      });
+
+      setState(() {
+        _profilePhotoUrl = url;
+        _isUploadingPhoto = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Profile photo updated!'),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() => _isUploadingPhoto = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to upload photo: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
     }
   }
 
@@ -103,26 +211,37 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        title: const Text('Edit Profile'),
+        backgroundColor: theme.appBarTheme.backgroundColor ??
+            theme.scaffoldBackgroundColor,
+        elevation: 0,
+        iconTheme: IconThemeData(color: colorScheme.onSurface),
+        title: Text(
+          'Edit Profile',
+          style: TextStyle(color: colorScheme.onSurface),
+        ),
         actions: [
           TextButton(
             onPressed: _isLoading ? null : _saveProfile,
             child: _isLoading
-                ? const SizedBox(
+                ? SizedBox(
                     width: 20,
                     height: 20,
                     child: CircularProgressIndicator(
-                      color: AppColors.primary,
+                      color: colorScheme.primary,
                       strokeWidth: 2,
                     ),
                   )
-                : const Text(
+                : Text(
                     'Save',
                     style: TextStyle(
-                      color: AppColors.primary,
+                      color: colorScheme.primary,
                       fontWeight: FontWeight.w600,
                       fontSize: 16,
                     ),
@@ -131,8 +250,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         ],
       ),
       body: _isFetching
-          ? const Center(
-              child: CircularProgressIndicator(color: AppColors.primary),
+          ? Center(
+              child: CircularProgressIndicator(color: colorScheme.primary),
             )
           : SingleChildScrollView(
               padding: const EdgeInsets.all(16),
@@ -143,41 +262,73 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   children: [
                     // Avatar
                     Center(
-                      child: Stack(
-                        children: [
-                          Container(
-                            width: 90,
-                            height: 90,
-                            decoration: BoxDecoration(
-                              color: AppColors.primary.withValues(alpha: 0.1),
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(
-                              Icons.person,
-                              size: 50,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                          Positioned(
-                            bottom: 0,
-                            right: 0,
-                            child: Container(
-                              width: 28,
-                              height: 28,
+                      child: GestureDetector(
+                        onTap: _pickAndUploadPhoto,
+                        child: Stack(
+                          children: [
+                            Container(
+                              width: 90,
+                              height: 90,
                               decoration: BoxDecoration(
-                                color: AppColors.primary,
+                                color: colorScheme.primary
+                                    .withValues(alpha: 0.15),
                                 shape: BoxShape.circle,
-                                border: Border.all(
-                                    color: Colors.white, width: 2),
+                                image: _profilePhotoUrl != null
+                                    ? DecorationImage(
+                                        image: NetworkImage(
+                                            _profilePhotoUrl!),
+                                        fit: BoxFit.cover,
+                                      )
+                                    : null,
                               ),
-                              child: const Icon(
-                                Icons.camera_alt,
-                                size: 14,
-                                color: Colors.white,
+                              child: _profilePhotoUrl == null
+                                  ? Icon(
+                                      Icons.person,
+                                      size: 50,
+                                      color: colorScheme.primary,
+                                    )
+                                  : null,
+                            ),
+                            if (_isUploadingPhoto)
+                              Positioned.fill(
+                                child: Container(
+                                  decoration: const BoxDecoration(
+                                    color: Colors.black38,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Center(
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 2,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            Positioned(
+                              bottom: 0,
+                              right: 0,
+                              child: Container(
+                                width: 28,
+                                height: 28,
+                                decoration: BoxDecoration(
+                                  color: colorScheme.primary,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: isDark
+                                        ? colorScheme.surface
+                                        : Colors.white,
+                                    width: 2,
+                                  ),
+                                ),
+                                child: const Icon(
+                                  Icons.camera_alt,
+                                  size: 14,
+                                  color: Colors.white,
+                                ),
                               ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                     const SizedBox(height: 24),
@@ -186,14 +337,20 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: AppColors.surface,
+                        color: isDark
+                            ? colorScheme.surface
+                            : colorScheme.surface,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.border),
+                        border: Border.all(
+                          color: isDark
+                              ? colorScheme.outline.withValues(alpha: 0.3)
+                              : colorScheme.outline.withValues(alpha: 0.2),
+                        ),
                       ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Column(
+                          Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
@@ -201,15 +358,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                                 style: TextStyle(
                                   fontSize: 15,
                                   fontWeight: FontWeight.w600,
-                                  color: AppColors.textPrimary,
+                                  color: colorScheme.onSurface,
                                 ),
                               ),
-                              SizedBox(height: 4),
+                              const SizedBox(height: 4),
                               Text(
                                 'Let recruiters know you\'re available',
                                 style: TextStyle(
                                   fontSize: 13,
-                                  color: AppColors.textSecondary,
+                                  color: colorScheme.onSurface
+                                      .withValues(alpha: 0.6),
                                 ),
                               ),
                             ],
@@ -218,22 +376,25 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                             value: _isOpenToWork,
                             onChanged: (value) =>
                                 setState(() => _isOpenToWork = value),
-                            activeThumbColor: AppColors.primary,
+                            activeThumbColor: colorScheme.primary,
                           ),
                         ],
                       ),
                     ),
                     const SizedBox(height: 20),
 
-                    // Form fields
+                    // Personal Information
                     const _SectionLabel(label: 'Personal Information'),
                     const SizedBox(height: 12),
 
                     TextFormField(
                       controller: _fullNameController,
-                      decoration: const InputDecoration(
+                      style: TextStyle(color: colorScheme.onSurface),
+                      decoration: InputDecoration(
                         labelText: 'Full name',
-                        prefixIcon: Icon(Icons.person_outlined),
+                        prefixIcon: Icon(Icons.person_outlined,
+                            color: colorScheme.onSurface
+                                .withValues(alpha: 0.6)),
                       ),
                       validator: (value) {
                         if (value == null || value.isEmpty) {
@@ -247,32 +408,42 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     TextFormField(
                       controller: _phoneController,
                       keyboardType: TextInputType.phone,
-                      decoration: const InputDecoration(
+                      style: TextStyle(color: colorScheme.onSurface),
+                      decoration: InputDecoration(
                         labelText: 'Phone number',
-                        prefixIcon: Icon(Icons.phone_outlined),
+                        prefixIcon: Icon(Icons.phone_outlined,
+                            color: colorScheme.onSurface
+                                .withValues(alpha: 0.6)),
                       ),
                     ),
                     const SizedBox(height: 16),
 
                     TextFormField(
                       controller: _locationController,
-                      decoration: const InputDecoration(
+                      style: TextStyle(color: colorScheme.onSurface),
+                      decoration: InputDecoration(
                         labelText: 'Location',
                         hintText: 'e.g. Accra, Ghana',
-                        prefixIcon: Icon(Icons.location_on_outlined),
+                        prefixIcon: Icon(Icons.location_on_outlined,
+                            color: colorScheme.onSurface
+                                .withValues(alpha: 0.6)),
                       ),
                     ),
                     const SizedBox(height: 24),
 
+                    // Professional Information
                     const _SectionLabel(label: 'Professional Information'),
                     const SizedBox(height: 12),
 
                     TextFormField(
                       controller: _jobTitleController,
-                      decoration: const InputDecoration(
+                      style: TextStyle(color: colorScheme.onSurface),
+                      decoration: InputDecoration(
                         labelText: 'Job title',
                         hintText: 'e.g. Flutter Developer',
-                        prefixIcon: Icon(Icons.work_outlined),
+                        prefixIcon: Icon(Icons.work_outlined,
+                            color: colorScheme.onSurface
+                                .withValues(alpha: 0.6)),
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -280,10 +451,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     TextFormField(
                       controller: _yearsOfExperienceController,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
+                      style: TextStyle(color: colorScheme.onSurface),
+                      decoration: InputDecoration(
                         labelText: 'Years of experience',
                         hintText: 'e.g. 3',
-                        prefixIcon: Icon(Icons.timeline_outlined),
+                        prefixIcon: Icon(Icons.timeline_outlined,
+                            color: colorScheme.onSurface
+                                .withValues(alpha: 0.6)),
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -291,10 +465,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     TextFormField(
                       controller: _bioController,
                       maxLines: 4,
-                      decoration: const InputDecoration(
+                      style: TextStyle(color: colorScheme.onSurface),
+                      decoration: InputDecoration(
                         labelText: 'Bio',
                         hintText: 'Tell recruiters about yourself...',
-                        prefixIcon: Icon(Icons.notes_outlined),
+                        prefixIcon: Icon(Icons.notes_outlined,
+                            color: colorScheme.onSurface
+                                .withValues(alpha: 0.6)),
                         alignLabelWithHint: true,
                       ),
                     ),
@@ -323,12 +500,13 @@ class _SectionLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Text(
       label,
-      style: const TextStyle(
+      style: TextStyle(
         fontSize: 13,
         fontWeight: FontWeight.w600,
-        color: AppColors.textSecondary,
+        color: colorScheme.onSurface.withValues(alpha: 0.55),
         letterSpacing: 0.5,
       ),
     );

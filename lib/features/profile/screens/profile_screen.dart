@@ -10,6 +10,7 @@ import 'skills_screen.dart';
 import 'saved_jobs_screen.dart';
 import 'notifications_screen.dart';
 import 'help_screen.dart';
+import 'settings_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -23,6 +24,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   int _appliedCount = 0;
   int _interviewingCount = 0;
   int _offersCount = 0;
+  bool _isOpenToWork = true;
+  String? _profilePhotoUrl; // FIX: track photo URL in state
+  String? _fullName;        // FIX: load full_name from profiles table too
 
   @override
   void initState() {
@@ -43,6 +47,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       final userId = user!.id;
       final applications = await SupabaseService.getApplications(userId);
+      final profile = await SupabaseService.getProfile(userId);
       if (mounted) {
         setState(() {
           _appliedCount =
@@ -51,6 +56,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
               applications.where((a) => a['status'] == 'interviewing').length;
           _offersCount =
               applications.where((a) => a['status'] == 'offered').length;
+          _isOpenToWork = profile?['is_open_to_work'] ?? true;
+          // FIX: load photo URL and full name from profile
+          _profilePhotoUrl = profile?['profile_photo_url'];
+          _fullName = profile?['full_name'];
         });
       }
     } catch (e) {
@@ -66,7 +75,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     if (user == null) {
       return Scaffold(
-        backgroundColor: AppColors.background,
+        backgroundColor: AppColors.bg(context),
         appBar: AppBar(title: const Text('Profile')),
         body: Center(
           child: Padding(
@@ -88,20 +97,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
                 const SizedBox(height: 24),
-                const Text(
-                  'Join JobSearch',
+                Text(
+                  'Join SmartJob',
                   style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
+                    color: AppColors.text(context),
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Text(
+                Text(
                   'Sign in to track your applications, save jobs, message recruiters and more.',
                   style: TextStyle(
                     fontSize: 15,
-                    color: AppColors.textSecondary,
+                    color: AppColors.textSec(context),
                     height: 1.5,
                   ),
                   textAlign: TextAlign.center,
@@ -110,8 +119,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ElevatedButton(
                   onPressed: () {
                     Navigator.of(context).push(
-                      MaterialPageRoute(
-                          builder: (_) => const LoginScreen()),
+                      MaterialPageRoute(builder: (_) => const LoginScreen()),
                     );
                   },
                   child: const Text('Sign in'),
@@ -120,8 +128,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 OutlinedButton(
                   onPressed: () {
                     Navigator.of(context).push(
-                      MaterialPageRoute(
-                          builder: (_) => const SignupScreen()),
+                      MaterialPageRoute(builder: (_) => const SignupScreen()),
                     );
                   },
                   style: OutlinedButton.styleFrom(
@@ -141,100 +148,117 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
     }
 
+    // FIX: derive display name — prefer profiles.full_name, fallback to metadata
+    final displayName = _fullName?.isNotEmpty == true
+        ? _fullName!
+        : (user?.userMetadata?['full_name'] ?? 'Your Name');
+
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: AppColors.bg(context),
       appBar: AppBar(
         title: const Text('Profile'),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings_outlined),
-            onPressed: () {},
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const SettingsScreen()),
+            ),
           ),
         ],
       ),
       body: SingleChildScrollView(
         child: Column(
           children: [
+            // Profile header
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(24),
-              color: AppColors.surface,
+              color: AppColors.surf(context),
               child: Column(
                 children: [
+                  // FIX: show actual photo if available, fallback to icon
                   Container(
                     width: 90,
                     height: 90,
                     decoration: BoxDecoration(
                       color: AppColors.primary.withValues(alpha: 0.1),
                       shape: BoxShape.circle,
+                      image: _profilePhotoUrl != null
+                          ? DecorationImage(
+                              image: NetworkImage(_profilePhotoUrl!),
+                              fit: BoxFit.cover,
+                            )
+                          : null,
                     ),
-                    child: const Icon(
-                      Icons.person,
-                      size: 50,
-                      color: AppColors.primary,
-                    ),
+                    child: _profilePhotoUrl == null
+                        ? const Icon(
+                            Icons.person,
+                            size: 50,
+                            color: AppColors.primary,
+                          )
+                        : null,
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    user?.userMetadata?['full_name'] ?? 'Your Name',
-                    style: const TextStyle(
+                    displayName,
+                    style: TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
-                      color: AppColors.textPrimary,
+                      color: AppColors.text(context),
                     ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     user?.email ?? '',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14,
-                      color: AppColors.textSecondary,
+                      color: AppColors.textSec(context),
                     ),
                   ),
                   const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: AppColors.success.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                          color: AppColors.success.withValues(alpha: 0.3)),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.circle,
-                            size: 8, color: AppColors.success),
-                        SizedBox(width: 6),
-                        Text(
-                          'Open to work',
-                          style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                            color: AppColors.success,
+                  if (_isOpenToWork)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppColors.success.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                            color: AppColors.success.withValues(alpha: 0.3)),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.circle, size: 8, color: AppColors.success),
+                          SizedBox(width: 6),
+                          Text(
+                            'Open to work',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              color: AppColors.success,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),
 
             const SizedBox(height: 12),
 
+            // Stats row
             Container(
               padding: const EdgeInsets.all(20),
-              color: AppColors.surface,
+              color: AppColors.surf(context),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
                   _StatItem(label: 'Applied', value: '$_appliedCount'),
-                  _Divider(),
-                  _StatItem(
-                      label: 'Interviews', value: '$_interviewingCount'),
-                  _Divider(),
+                  _VerticalDivider(),
+                  _StatItem(label: 'Interviews', value: '$_interviewingCount'),
+                  _VerticalDivider(),
                   _StatItem(label: 'Offers', value: '$_offersCount'),
                 ],
               ),
@@ -242,32 +266,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             const SizedBox(height: 12),
 
+            // Menu items
             Container(
-              color: AppColors.surface,
+              color: AppColors.surf(context),
               child: Column(
                 children: [
                   _MenuItem(
                     icon: Icons.person_outlined,
                     label: 'Edit profile',
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                          builder: (_) => const EditProfileScreen()),
-                    ),
+                    // FIX: reload stats (including photo) when returning
+                    onTap: () => Navigator.of(context)
+                        .push(MaterialPageRoute(
+                            builder: (_) => const EditProfileScreen()))
+                        .then((_) => _loadStats()),
                   ),
                   _MenuItem(
                     icon: Icons.description_outlined,
                     label: 'My resume',
                     onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                          builder: (_) => const ResumeScreen()),
+                      MaterialPageRoute(builder: (_) => const ResumeScreen()),
                     ),
                   ),
                   _MenuItem(
                     icon: Icons.school_outlined,
                     label: 'Skills & experience',
                     onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                          builder: (_) => const SkillsScreen()),
+                      MaterialPageRoute(builder: (_) => const SkillsScreen()),
                     ),
                   ),
                   _MenuItem(
@@ -290,8 +314,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     icon: Icons.help_outline,
                     label: 'Help & support',
                     onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                          builder: (_) => const HelpScreen()),
+                      MaterialPageRoute(builder: (_) => const HelpScreen()),
                     ),
                   ),
                 ],
@@ -301,7 +324,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const SizedBox(height: 12),
 
             Container(
-              color: AppColors.surface,
+              color: AppColors.surf(context),
               child: _MenuItem(
                 icon: Icons.logout,
                 label: 'Sign out',
@@ -330,32 +353,29 @@ class _StatItem extends StatelessWidget {
       children: [
         Text(
           value,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 22,
             fontWeight: FontWeight.bold,
-            color: AppColors.textPrimary,
+            color: AppColors.text(context),
           ),
         ),
         const SizedBox(height: 4),
         Text(
           label,
-          style: const TextStyle(
-            fontSize: 13,
-            color: AppColors.textSecondary,
-          ),
+          style: TextStyle(fontSize: 13, color: AppColors.textSec(context)),
         ),
       ],
     );
   }
 }
 
-class _Divider extends StatelessWidget {
+class _VerticalDivider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
       height: 40,
       width: 1,
-      color: AppColors.border,
+      color: AppColors.bord(context),
     );
   }
 }
@@ -381,12 +401,14 @@ class _MenuItem extends StatelessWidget {
         label,
         style: TextStyle(
           fontSize: 15,
-          color: color,
+          color: color == AppColors.textPrimary
+              ? AppColors.text(context)
+              : color,
           fontWeight: FontWeight.w500,
         ),
       ),
       trailing: color == AppColors.textPrimary
-          ? const Icon(Icons.chevron_right, color: AppColors.textHint)
+          ? Icon(Icons.chevron_right, color: AppColors.textSec(context))
           : null,
       onTap: onTap,
     );

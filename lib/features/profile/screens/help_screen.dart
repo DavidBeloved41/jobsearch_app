@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme/app_colors.dart';
 
 class HelpScreen extends StatefulWidget {
@@ -38,7 +39,7 @@ class _HelpScreenState extends State<HelpScreen> {
     {
       'question': 'How do I delete my account?',
       'answer':
-          'To delete your account please contact our support team at support@jobsearch.app. Note that this action is permanent and cannot be undone.',
+          'To delete your account please contact our support team at support@smartjob.app. Note that this action is permanent and cannot be undone.',
     },
     {
       'question': 'Is my data secure?',
@@ -49,10 +50,99 @@ class _HelpScreenState extends State<HelpScreen> {
 
   int? _expandedIndex;
 
+  // ── Contact Support ──────────────────────────────────────────────────────
+  Future<void> _contactSupport() async {
+    final Uri emailUri = Uri(
+      scheme: 'mailto',
+      path: 'support@smartjob.app',
+      queryParameters: {
+        'subject': 'SmartJob Support Request',
+        'body': 'Hi SmartJob Support,\n\nI need help with:\n\n',
+      },
+    );
+    if (await canLaunchUrl(emailUri)) {
+      await launchUrl(emailUri);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not open email app. Please email support@smartjob.app'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  // ── Privacy Policy ───────────────────────────────────────────────────────
+  Future<void> _openPrivacyPolicy() async {
+    // Replace with your actual privacy policy URL
+    final Uri url = Uri.parse('https://smartjob.app/privacy');
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not open Privacy Policy'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  // ── Terms of Service ─────────────────────────────────────────────────────
+  Future<void> _openTermsOfService() async {
+    // Replace with your actual terms URL
+    final Uri url = Uri.parse('https://smartjob.app/terms');
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not open Terms of Service'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  // ── Rate the App ─────────────────────────────────────────────────────────
+  Future<void> _rateApp() async {
+    // Replace with your actual Play Store / App Store URL
+    final Uri url = Uri.parse(
+      'https://play.google.com/store/apps/details?id=com.smartjob.app',
+    );
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not open the app store'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  // ── Share with Friends ───────────────────────────────────────────────────
+  void _shareApp() async {
+  final Uri url = Uri.parse('https://smartjob.app/download');
+  if (await canLaunchUrl(url)) {
+    await launchUrl(url, mode: LaunchMode.externalApplication);
+  }
+}
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: AppColors.bg(context),
       appBar: AppBar(
         title: const Text('Help & Support'),
       ),
@@ -61,7 +151,7 @@ class _HelpScreenState extends State<HelpScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Contact support card
+            // ── Contact support card ───────────────────────────────────────
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(20),
@@ -72,8 +162,7 @@ class _HelpScreenState extends State<HelpScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.support_agent,
-                      color: Colors.white, size: 32),
+                  const Icon(Icons.support_agent, color: Colors.white, size: 32),
                   const SizedBox(height: 12),
                   const Text(
                     'Need help?',
@@ -85,15 +174,13 @@ class _HelpScreenState extends State<HelpScreen> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Our support team is available Monday to Friday, 9am - 6pm GMT.',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.white70,
-                    ),
+                    'Our support team is available Monday to Friday, 9am – 6pm GMT.',
+                    style: TextStyle(fontSize: 14, color: Colors.white70),
                   ),
                   const SizedBox(height: 16),
+                  // FIX: Contact Support now opens the email app
                   ElevatedButton.icon(
-                    onPressed: () {},
+                    onPressed: _contactSupport,
                     icon: const Icon(Icons.email_outlined),
                     label: const Text('Contact Support'),
                     style: ElevatedButton.styleFrom(
@@ -106,35 +193,35 @@ class _HelpScreenState extends State<HelpScreen> {
             ),
             const SizedBox(height: 24),
 
-            // FAQ section
-            const Text(
+            // ── FAQ section ───────────────────────────────────────────────
+            Text(
               'Frequently Asked Questions',
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary,
+                color: AppColors.text(context),
               ),
             ),
             const SizedBox(height: 12),
 
-            // FAQ items
             Container(
               decoration: BoxDecoration(
-                color: AppColors.surface,
+                color: AppColors.surf(context),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.border),
+                border: Border.all(color: AppColors.bord(context)),
               ),
               child: ListView.separated(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 itemCount: _faqs.length,
-                separatorBuilder: (context, index) =>
-                    const Divider(color: AppColors.border, height: 1),
+                separatorBuilder: (_, __) =>
+                    Divider(color: AppColors.bord(context), height: 1),
                 itemBuilder: (context, index) {
                   final faq = _faqs[index];
                   final isExpanded = _expandedIndex == index;
 
                   return InkWell(
+                    borderRadius: BorderRadius.circular(16),
                     onTap: () {
                       setState(() {
                         _expandedIndex = isExpanded ? null : index;
@@ -156,8 +243,8 @@ class _HelpScreenState extends State<HelpScreen> {
                                         ? FontWeight.w600
                                         : FontWeight.w500,
                                     color: isExpanded
-                                        ? AppColors.primary
-                                        : AppColors.textPrimary,
+                                        ? colorScheme.primary
+                                        : AppColors.text(context),
                                   ),
                                 ),
                               ),
@@ -166,8 +253,8 @@ class _HelpScreenState extends State<HelpScreen> {
                                     ? Icons.keyboard_arrow_up
                                     : Icons.keyboard_arrow_down,
                                 color: isExpanded
-                                    ? AppColors.primary
-                                    : AppColors.textSecondary,
+                                    ? colorScheme.primary
+                                    : AppColors.textSec(context),
                               ),
                             ],
                           ),
@@ -175,9 +262,9 @@ class _HelpScreenState extends State<HelpScreen> {
                             const SizedBox(height: 12),
                             Text(
                               faq['answer']!,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 13,
-                                color: AppColors.textSecondary,
+                                color: AppColors.textSec(context),
                                 height: 1.6,
                               ),
                             ),
@@ -191,59 +278,60 @@ class _HelpScreenState extends State<HelpScreen> {
             ),
             const SizedBox(height: 24),
 
-            // Quick links
-            const Text(
+            // ── Quick Links ───────────────────────────────────────────────
+            Text(
               'Quick Links',
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary,
+                color: AppColors.text(context),
               ),
             ),
             const SizedBox(height: 12),
             Container(
               decoration: BoxDecoration(
-                color: AppColors.surface,
+                color: AppColors.surf(context),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: AppColors.border),
+                border: Border.all(color: AppColors.bord(context)),
               ),
               child: Column(
                 children: [
+                  // FIX: All Quick Links now do something
                   _QuickLink(
                     icon: Icons.privacy_tip_outlined,
                     label: 'Privacy Policy',
-                    onTap: () {},
+                    onTap: _openPrivacyPolicy,
                   ),
-                  const Divider(color: AppColors.border, height: 1),
+                  Divider(color: AppColors.bord(context), height: 1),
                   _QuickLink(
                     icon: Icons.description_outlined,
                     label: 'Terms of Service',
-                    onTap: () {},
+                    onTap: _openTermsOfService,
                   ),
-                  const Divider(color: AppColors.border, height: 1),
+                  Divider(color: AppColors.bord(context), height: 1),
                   _QuickLink(
                     icon: Icons.star_outline,
                     label: 'Rate the App',
-                    onTap: () {},
+                    onTap: _rateApp,
                   ),
-                  const Divider(color: AppColors.border, height: 1),
+                  Divider(color: AppColors.bord(context), height: 1),
                   _QuickLink(
                     icon: Icons.share_outlined,
                     label: 'Share with Friends',
-                    onTap: () {},
+                    onTap: _shareApp,
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 24),
 
-            // App version
-            const Center(
+            // ── App version ───────────────────────────────────────────────
+            Center(
               child: Text(
-                'JobSearch App v1.0.0',
+                'SmartJob v1.0.0',
                 style: TextStyle(
                   fontSize: 12,
-                  color: AppColors.textHint,
+                  color: AppColors.textSec(context),
                 ),
               ),
             ),
@@ -272,13 +360,13 @@ class _QuickLink extends StatelessWidget {
       leading: Icon(icon, color: AppColors.primary, size: 22),
       title: Text(
         label,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.w500,
-          color: AppColors.textPrimary,
+          color: AppColors.text(context),
         ),
       ),
-      trailing: const Icon(Icons.chevron_right, color: AppColors.textHint),
+      trailing: Icon(Icons.chevron_right, color: AppColors.textSec(context)),
       onTap: onTap,
     );
   }

@@ -42,8 +42,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     try {
       await Supabase.instance.client
           .from('notifications')
-          .update({'is_read': true})
-          .eq('id', notificationId);
+          .update({'is_read': true}).eq('id', notificationId);
       await _loadNotifications();
     } catch (e) {
       debugPrint('Error marking notification as read: $e');
@@ -55,8 +54,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       final userId = Supabase.instance.client.auth.currentUser!.id;
       await Supabase.instance.client
           .from('notifications')
-          .update({'is_read': true})
-          .eq('user_id', userId);
+          .update({'is_read': true}).eq('user_id', userId);
       await _loadNotifications();
     } catch (e) {
       debugPrint('Error marking all as read: $e');
@@ -93,7 +91,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       case 'employer_interest':
         return AppColors.error;
       default:
-        return AppColors.textSecondary;
+        return AppColors.primary;
     }
   }
 
@@ -115,43 +113,47 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         _notifications.where((n) => n['is_read'] == false).length;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: AppColors.bg(context),
       appBar: AppBar(
         title: const Text('Notifications'),
         actions: [
           if (unreadCount > 0)
             TextButton(
               onPressed: _markAllAsRead,
-              child: const Text(
+              child: Text(
                 'Mark all read',
-                style: TextStyle(color: AppColors.primary),
+                style: TextStyle(color: Theme.of(context).colorScheme.primary),
               ),
             ),
         ],
       ),
       body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(color: AppColors.primary))
+          ? Center(
+              child: CircularProgressIndicator(
+                  color: Theme.of(context).colorScheme.primary))
           : _notifications.isEmpty
-              ? const Center(
+              ? Center(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.notifications_none_outlined,
-                          size: 64, color: AppColors.textHint),
-                      SizedBox(height: 16),
+                      Icon(
+                        Icons.notifications_none_outlined,
+                        size: 64,
+                        color: AppColors.textSec(context),
+                      ),
+                      const SizedBox(height: 16),
                       Text(
                         'No notifications yet',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimary,
+                          color: AppColors.text(context),
                         ),
                       ),
-                      SizedBox(height: 8),
+                      const SizedBox(height: 8),
                       Text(
                         'You\'ll be notified about job matches\nand application updates',
-                        style: TextStyle(color: AppColors.textSecondary),
+                        style: TextStyle(color: AppColors.textSec(context)),
                         textAlign: TextAlign.center,
                       ),
                     ],
@@ -175,12 +177,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                             vertical: 12,
                           ),
                           decoration: BoxDecoration(
+                            // Unread gets a subtle primary tint, read uses surface
                             color: isRead
-                                ? AppColors.surface
-                                : AppColors.primary.withValues(alpha: 0.03),
-                            border: const Border(
-                              bottom:
-                                  BorderSide(color: AppColors.border),
+                                ? AppColors.surf(context)
+                                : Theme.of(context)
+                                    .colorScheme
+                                    .primary
+                                    .withValues(alpha: 0.06),
+                            border: Border(
+                              bottom: BorderSide(
+                                  color: AppColors.bord(context)),
                             ),
                           ),
                           child: Row(
@@ -190,7 +196,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                 width: 44,
                                 height: 44,
                                 decoration: BoxDecoration(
-                                  color: color.withValues(alpha: 0.1),
+                                  color: color.withValues(alpha: 0.12),
                                   shape: BoxShape.circle,
                                 ),
                                 child: Icon(
@@ -217,7 +223,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                               fontWeight: isRead
                                                   ? FontWeight.w500
                                                   : FontWeight.w600,
-                                              color: AppColors.textPrimary,
+                                              color: AppColors.text(context),
                                             ),
                                           ),
                                         ),
@@ -227,8 +233,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                           style: TextStyle(
                                             fontSize: 11,
                                             color: isRead
-                                                ? AppColors.textHint
-                                                : AppColors.primary,
+                                                ? AppColors.textSec(context)
+                                                : Theme.of(context)
+                                                    .colorScheme
+                                                    .primary,
                                           ),
                                         ),
                                       ],
@@ -236,9 +244,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                     const SizedBox(height: 4),
                                     Text(
                                       notification['body'] ?? '',
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 13,
-                                        color: AppColors.textSecondary,
+                                        color: AppColors.textSec(context),
                                       ),
                                     ),
                                     if (!isRead)
@@ -248,8 +256,10 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                         child: Container(
                                           width: 8,
                                           height: 8,
-                                          decoration: const BoxDecoration(
-                                            color: AppColors.primary,
+                                          decoration: BoxDecoration(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .primary,
                                             shape: BoxShape.circle,
                                           ),
                                         ),

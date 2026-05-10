@@ -35,7 +35,7 @@ class _HomeScreenState extends State<HomeScreen> {
         type: BottomNavigationBarType.fixed,
         selectedItemColor: AppColors.primary,
         unselectedItemColor: AppColors.textSecondary,
-        backgroundColor: AppColors.surface,
+        backgroundColor: AppColors.surf(context),
         elevation: 8,
         items: const [
           BottomNavigationBarItem(
@@ -64,7 +64,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// Placeholder screens — we'll build these out one by one
 class JobsFeedScreen extends StatefulWidget {
   const JobsFeedScreen({super.key});
 
@@ -96,17 +95,16 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
     setState(() => _isLoading = true);
     try {
       final jobs = await SupabaseService.getJobs(
-  workModel: (_selectedFilter == 'remote' ||
-          _selectedFilter == 'hybrid' ||
-          _selectedFilter == 'on-site')
-      ? _selectedFilter
-      : null,
-  employmentType: (_selectedFilter == 'full-time' ||
-          _selectedFilter == 'contract')
-      ? _selectedFilter
-      : null,
-    );
-      
+        workModel: (_selectedFilter == 'remote' ||
+                _selectedFilter == 'hybrid' ||
+                _selectedFilter == 'on-site')
+            ? _selectedFilter
+            : null,
+        employmentType: (_selectedFilter == 'full-time' ||
+                _selectedFilter == 'contract')
+            ? _selectedFilter
+            : null,
+      );
       setState(() {
         _jobs = jobs;
         _isLoading = false;
@@ -120,7 +118,7 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: AppColors.bg(context),
       appBar: AppBar(
         title: const Text('Find Jobs'),
         actions: [
@@ -141,17 +139,21 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
               // Search bar
               Container(
                 decoration: BoxDecoration(
-                  color: AppColors.surface,
+                  color: AppColors.surf(context),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.border),
+                  border: Border.all(color: AppColors.bord(context)),
                 ),
-                child: const TextField(
+                child: TextField(
+                  style: TextStyle(color: AppColors.text(context)),
                   decoration: InputDecoration(
                     hintText: 'Search jobs, companies...',
-                    prefixIcon:
-                        Icon(Icons.search, color: AppColors.textSecondary),
+                    hintStyle:
+                        TextStyle(color: AppColors.textSec(context)),
+                    prefixIcon: Icon(Icons.search,
+                        color: AppColors.textSec(context)),
                     border: InputBorder.none,
-                    contentPadding: EdgeInsets.symmetric(vertical: 14),
+                    contentPadding:
+                        const EdgeInsets.symmetric(vertical: 14),
                   ),
                 ),
               ),
@@ -175,12 +177,12 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
                         decoration: BoxDecoration(
                           color: isSelected
                               ? AppColors.primary
-                              : AppColors.surface,
+                              : AppColors.surf(context),
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(
                             color: isSelected
                                 ? AppColors.primary
-                                : AppColors.border,
+                                : AppColors.bord(context),
                           ),
                         ),
                         child: Text(
@@ -188,7 +190,7 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
                           style: TextStyle(
                             color: isSelected
                                 ? Colors.white
-                                : AppColors.textSecondary,
+                                : AppColors.textSec(context),
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
                           ),
@@ -201,12 +203,12 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
               const SizedBox(height: 20),
 
               // Featured jobs section
-              const Text(
+              Text(
                 'Featured jobs',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
+                  color: AppColors.text(context),
                 ),
               ),
               const SizedBox(height: 12),
@@ -222,18 +224,19 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
                       ),
                     )
                   : _jobs.isEmpty
-                      ? const Center(
+                      ? Center(
                           child: Padding(
-                            padding: EdgeInsets.all(40),
+                            padding: const EdgeInsets.all(40),
                             child: Column(
                               children: [
                                 Icon(Icons.work_off_outlined,
-                                    size: 64, color: AppColors.textHint),
-                                SizedBox(height: 16),
+                                    size: 64,
+                                    color: AppColors.textSec(context)),
+                                const SizedBox(height: 16),
                                 Text(
                                   'No jobs found',
                                   style: TextStyle(
-                                      color: AppColors.textSecondary),
+                                      color: AppColors.textSec(context)),
                                 ),
                               ],
                             ),
@@ -241,27 +244,30 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
                         )
                       : Column(
                           children: _jobs.map((job) {
-  final company = job['companies'] as Map<String, dynamic>?;
-  return GestureDetector(
-    onTap: () {
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => JobDetailScreen(job: job),
-        ),
-      );
-    },
-    child: _JobCard(
-  title: job['title'] ?? '',
-  company: company?['name'] ?? '',
-  location: job['location'] ?? '',
-  salary: '\$${(job['salary_min'] / 1000).toStringAsFixed(0)}k - \$${(job['salary_max'] / 1000).toStringAsFixed(0)}k',
-  workModel: job['work_model'] ?? '',
-  matchScore: 85,
-  logo: Icons.business,
-  jobId: job['id'] ?? '',
-),
-  );
-}).toList(),
+                            final company =
+                                job['companies'] as Map<String, dynamic>?;
+                            return GestureDetector(
+                              onTap: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        JobDetailScreen(job: job),
+                                  ),
+                                );
+                              },
+                              child: _JobCard(
+                                title: job['title'] ?? '',
+                                company: company?['name'] ?? '',
+                                location: job['location'] ?? '',
+                                salary:
+                                    '\$${(job['salary_min'] / 1000).toStringAsFixed(0)}k - \$${(job['salary_max'] / 1000).toStringAsFixed(0)}k',
+                                workModel: job['work_model'] ?? '',
+                                matchScore: 85,
+                                logo: Icons.business,
+                                jobId: job['id'] ?? '',
+                              ),
+                            );
+                          }).toList(),
                         ),
             ],
           ),
@@ -270,8 +276,6 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
     );
   }
 }
-
-
 
 class _JobCard extends StatefulWidget {
   final String title;
@@ -302,95 +306,96 @@ class _JobCardState extends State<_JobCard> {
   bool _isSaved = false;
 
   Future<void> _toggleSave() async {
-  final user = Supabase.instance.client.auth.currentUser;
-  if (user == null) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
-        return Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) {
+      showModalBottomSheet(
+        context: context,
+        backgroundColor: AppColors.surf(context),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (context) {
+          return Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.lock_outline,
+                      color: AppColors.primary, size: 28),
                 ),
-                child: const Icon(Icons.lock_outline,
-                    color: AppColors.primary, size: 28),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Sign in required',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textPrimary,
+                const SizedBox(height: 16),
+                Text(
+                  'Sign in required',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.text(context),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'You need to sign in to save jobs.',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: AppColors.textSecondary,
+                const SizedBox(height: 8),
+                Text(
+                  'You need to sign in to save jobs.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: AppColors.textSec(context),
+                  ),
+                  textAlign: TextAlign.center,
                 ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                        builder: (_) => const LoginScreen()),
-                  );
-                },
-                child: const Text('Sign in'),
-              ),
-              const SizedBox(height: 12),
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Maybe later'),
-              ),
-              const SizedBox(height: 8),
-            ],
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                          builder: (_) => const LoginScreen()),
+                    );
+                  },
+                  child: const Text('Sign in'),
+                ),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Maybe later'),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          );
+        },
+      );
+      return;
+    }
+
+    try {
+      if (_isSaved) {
+        await SupabaseService.unsaveJob(user.id, widget.jobId);
+      } else {
+        await SupabaseService.saveJob(user.id, widget.jobId);
+      }
+      setState(() => _isSaved = !_isSaved);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                _isSaved ? 'Job saved!' : 'Job removed from saved'),
+            backgroundColor: _isSaved
+                ? AppColors.success
+                : AppColors.textSecondary,
+            duration: const Duration(seconds: 1),
           ),
         );
-      },
-    );
-    return;
-  }
-
-  try {
-    if (_isSaved) {
-      await SupabaseService.unsaveJob(user.id, widget.jobId);
-    } else {
-      await SupabaseService.saveJob(user.id, widget.jobId);
+      }
+    } catch (e) {
+      debugPrint('Error toggling save: $e');
     }
-    setState(() => _isSaved = !_isSaved);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(_isSaved ? 'Job saved!' : 'Job removed from saved'),
-          backgroundColor: _isSaved
-              ? AppColors.success
-              : AppColors.textSecondary,
-          duration: const Duration(seconds: 1),
-        ),
-      );
-    }
-  } catch (e) {
-    debugPrint('Error toggling save: $e');
   }
-}
 
   Color get _workModelColor {
     switch (widget.workModel) {
@@ -409,9 +414,9 @@ class _JobCardState extends State<_JobCard> {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: AppColors.surf(context),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
+        border: Border.all(color: AppColors.bord(context)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -425,7 +430,8 @@ class _JobCardState extends State<_JobCard> {
                   color: AppColors.primary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(widget.logo, color: AppColors.primary, size: 28),
+                child:
+                    Icon(widget.logo, color: AppColors.primary, size: 28),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -434,26 +440,26 @@ class _JobCardState extends State<_JobCard> {
                   children: [
                     Text(
                       widget.title,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary,
+                        color: AppColors.text(context),
                       ),
                     ),
                     const SizedBox(height: 2),
                     Text(
                       widget.company,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 13,
-                        color: AppColors.textSecondary,
+                        color: AppColors.textSec(context),
                       ),
                     ),
                   ],
                 ),
               ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: AppColors.primary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(20),
@@ -472,25 +478,25 @@ class _JobCardState extends State<_JobCard> {
           const SizedBox(height: 12),
           Row(
             children: [
-              const Icon(Icons.location_on_outlined,
-                  size: 14, color: AppColors.textSecondary),
+              Icon(Icons.location_on_outlined,
+                  size: 14, color: AppColors.textSec(context)),
               const SizedBox(width: 4),
               Text(
                 widget.location,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13,
-                  color: AppColors.textSecondary,
+                  color: AppColors.textSec(context),
                 ),
               ),
               const SizedBox(width: 16),
-              const Icon(Icons.attach_money,
-                  size: 14, color: AppColors.textSecondary),
+              Icon(Icons.attach_money,
+                  size: 14, color: AppColors.textSec(context)),
               const SizedBox(width: 4),
               Text(
                 widget.salary,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13,
-                  color: AppColors.textSecondary,
+                  color: AppColors.textSec(context),
                 ),
               ),
             ],
@@ -500,8 +506,8 @@ class _JobCardState extends State<_JobCard> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: _workModelColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(20),
@@ -520,7 +526,7 @@ class _JobCardState extends State<_JobCard> {
                   _isSaved ? Icons.bookmark : Icons.bookmark_border,
                   color: _isSaved
                       ? AppColors.primary
-                      : AppColors.textSecondary,
+                      : AppColors.textSec(context),
                 ),
                 onPressed: _toggleSave,
                 padding: EdgeInsets.zero,
