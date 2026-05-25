@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../app/router.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/services/biometric_service.dart';
 import 'signup_screen.dart';
 import 'forgot_password_screen.dart';
 
@@ -18,6 +21,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _obscurePassword = true;
+  bool _biometricAvailable = false;
+  bool _biometricEnabled = false;
+  String _biometricLabel = 'Biometrics';
+
+  @override
+  void initState() {
+    super.initState();
+    _checkBiometrics();
+  }
 
   @override
   void dispose() {
@@ -26,38 +38,194 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     super.dispose();
   }
 
-  Future<void> _login() async {
-  if (!_formKey.currentState!.validate()) return;
-
-  setState(() => _isLoading = true);
-
-  try {
-    await Supabase.instance.client.auth.signInWithPassword(
-      email: _emailController.text.trim(),
-      password: _passwordController.text.trim(),
-    );
-
+  Future<void> _checkBiometrics() async {
+    final available = await BiometricService.isAvailable();
+    final enabled = await BiometricService.isBiometricEnabled();
+    final credentials = await BiometricService.getCredentials();
+    final hasSavedCredentials =
+        credentials['email'] != null && credentials['password'] != null;
+    final label = await BiometricService.getBiometricLabel();
     if (mounted) {
-      Navigator.of(context).popUntil((route) => route.isFirst);
+      setState(() {
+        _biometricAvailable = available;
+        _biometricEnabled = enabled && hasSavedCredentials;
+        _biometricLabel = label;
+      });
     }
-  } on AuthException catch (e) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(e.message),
-          backgroundColor: AppColors.error,
-        ),
-      );
-    }
-  } finally {
-    if (mounted) setState(() => _isLoading = false);
   }
-}
+
+  Future<void> _login() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _isLoading = true);
+
+    try {
+      await Supabase.instance.client.auth.signInWithPassword(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+      );
+
+      if (mounted && _biometricAvailable && !_biometricEnabled) {
+        _promptEnableBiometric(
+          _emailController.text.trim(),
+          _passwordController.text.trim(),
+        );
+      } else if (mounted) {
+        GoRouter.of(context).go(AppRoutes.home);
+      }
+    } on AuthException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message), backgroundColor: AppColors.error),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _loginWithBiometric() async {
+    setState(() => _isLoading = true);
+    try {
+      final authenticated = await BiometricService.authenticate(
+        reason: 'Sign in to SmartJob',
+      );
+
+      if (!authenticated) {
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      final credentials = await BiometricService.getCredentials();
+      final email = credentials['email'];
+      final password = credentials['password'];
+
+      if (email == null || password == null) {
+        await BiometricService.disableBiometric();
+        if (mounted) {
+          setState(() {
+            _biometricEnabled = false;
+            _isLoading = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Please sign in with your password first'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+        return;
+      }
+
+      await Supabase.instance.client.auth.signInWithPassword(
+        email: email,
+        password: password,
+      );
+
+      if (mounted) GoRouter.of(context).go(AppRoutes.home);
+    } on AuthException catch (e) {
+      await BiometricService.disableBiometric();
+      setState(() {
+        _biometricEnabled = false;
+        _isLoading = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message), backgroundColor: AppColors.error),
+        );
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  void _promptEnableBiometric(String email, String password) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      isDismissible: false,
+      builder: (sheetContext) {
+        return Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                _biometricLabel == 'Face ID'
+                    ? Icons.face_outlined
+                    : Icons.fingerprint,
+                size: 48,
+                color: AppColors.primary,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Enable $_biometricLabel?',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Sign in faster next time using $_biometricLabel instead of your password.',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.6),
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: () async {
+                  try {
+                    debugPrint('Saving biometric credentials for $email');
+                    await BiometricService.saveCredentials(email, password);
+                    if (!mounted) return;
+                    Navigator.pop(context);
+                    setState(() => _biometricEnabled = true);
+                    debugPrint('Biometric setup successful');
+                    GoRouter.of(context).go(AppRoutes.home);
+                  } catch (e) {
+                    debugPrint('Error saving biometric credentials: $e');
+                    if (!mounted) return;
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Failed to set up $_biometricLabel: $e'),
+                        backgroundColor: AppColors.error,
+                      ),
+                    );
+                  }
+                },
+                child: Text('Enable $_biometricLabel'),
+              ),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(sheetContext);
+                  if (mounted) GoRouter.of(context).go(AppRoutes.home);
+                },
+                child: const Text('Not now'),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: AppColors.bg(context),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -67,27 +235,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 48),
-
-                // Header
-                const Text(
+                Text(
                   'Welcome back',
                   style: TextStyle(
                     fontSize: 28,
                     fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
+                    color: AppColors.text(context),
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
+                Text(
                   'Sign in to continue your job search',
                   style: TextStyle(
                     fontSize: 16,
-                    color: AppColors.textSecondary,
+                    color: AppColors.textSec(context),
                   ),
                 ),
                 const SizedBox(height: 48),
-
-                // Email field
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
@@ -107,8 +271,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   },
                 ),
                 const SizedBox(height: 16),
-
-                // Password field
                 TextFormField(
                   controller: _passwordController,
                   obscureText: _obscurePassword,
@@ -122,9 +284,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             ? Icons.visibility_outlined
                             : Icons.visibility_off_outlined,
                       ),
-                      onPressed: () {
-                        setState(() => _obscurePassword = !_obscurePassword);
-                      },
+                      onPressed: () =>
+                          setState(() => _obscurePassword = !_obscurePassword),
                     ),
                   ),
                   validator: (value) {
@@ -138,46 +299,59 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   },
                 ),
                 const SizedBox(height: 12),
-
-                // Forgot password
                 Align(
                   alignment: Alignment.centerRight,
-                  child:
-                   TextButton(
-                    onPressed: () {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const ForgotPasswordScreen()),
-                      );
-                    },
+                  child: TextButton(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const ForgotPasswordScreen(),
+                      ),
+                    ),
                     child: const Text('Forgot password?'),
-),
+                  ),
                 ),
                 const SizedBox(height: 24),
-
-                // Login button
                 ElevatedButton(
                   onPressed: _isLoading ? null : _login,
                   child: _isLoading
                       ? const CircularProgressIndicator(color: Colors.white)
                       : const Text('Sign in'),
                 ),
-                const SizedBox(height: 24),
-
-                // Sign up link
+                const SizedBox(height: 16),
+                if (_biometricAvailable && _biometricEnabled) ...[
+                  OutlinedButton.icon(
+                    onPressed: _isLoading ? null : _loginWithBiometric,
+                    icon: Icon(
+                      _biometricLabel == 'Face ID'
+                          ? Icons.face_outlined
+                          : Icons.fingerprint,
+                      color: colorScheme.primary,
+                    ),
+                    label: Text(
+                      'Sign in with $_biometricLabel',
+                      style: TextStyle(color: colorScheme.primary),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: colorScheme.primary),
+                      minimumSize: const Size(double.infinity, 52),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Text(
+                    Text(
                       "Don't have an account? ",
-                      style: TextStyle(color: AppColors.textSecondary),
+                      style: TextStyle(color: AppColors.textSec(context)),
                     ),
                     TextButton(
-                      onPressed: () {
-                        Navigator.of(context).push(
-                         MaterialPageRoute(builder: (_) => const SignupScreen()),
-                    );
-                  },
+                      onPressed: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const SignupScreen()),
+                      ),
                       child: const Text('Sign up'),
                     ),
                   ],

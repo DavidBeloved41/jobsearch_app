@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/services/biometric_service.dart';
 import '../../../core/supabase/supabase_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../auth/screens/login_screen.dart';
@@ -7,6 +8,7 @@ import '../../auth/screens/signup_screen.dart';
 import 'edit_profile_screen.dart';
 import 'resume_screen.dart';
 import 'skills_screen.dart';
+import 'skill_gap_screen.dart';
 import 'saved_jobs_screen.dart';
 import 'notifications_screen.dart';
 import 'help_screen.dart';
@@ -26,7 +28,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   int _offersCount = 0;
   bool _isOpenToWork = true;
   String? _profilePhotoUrl; // FIX: track photo URL in state
-  String? _fullName;        // FIX: load full_name from profiles table too
+  String? _fullName; // FIX: load full_name from profiles table too
 
   @override
   void initState() {
@@ -50,12 +52,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final profile = await SupabaseService.getProfile(userId);
       if (mounted) {
         setState(() {
-          _appliedCount =
-              applications.where((a) => a['status'] == 'applied').length;
-          _interviewingCount =
-              applications.where((a) => a['status'] == 'interviewing').length;
-          _offersCount =
-              applications.where((a) => a['status'] == 'offered').length;
+          _appliedCount = applications
+              .where((a) => a['status'] == 'applied')
+              .length;
+          _interviewingCount = applications
+              .where((a) => a['status'] == 'interviewing')
+              .length;
+          _offersCount = applications
+              .where((a) => a['status'] == 'offered')
+              .length;
           _isOpenToWork = profile?['is_open_to_work'] ?? true;
           // FIX: load photo URL and full name from profile
           _profilePhotoUrl = profile?['profile_photo_url'];
@@ -68,6 +73,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _signOut() async {
+    await BiometricService.disableBiometric();
     await Supabase.instance.client.auth.signOut();
   }
 
@@ -160,9 +166,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.settings_outlined),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const SettingsScreen()),
-            ),
+            onPressed: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const SettingsScreen())),
           ),
         ],
       ),
@@ -219,12 +225,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   if (_isOpenToWork)
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 6),
+                        horizontal: 16,
+                        vertical: 6,
+                      ),
                       decoration: BoxDecoration(
                         color: AppColors.success.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                            color: AppColors.success.withValues(alpha: 0.3)),
+                          color: AppColors.success.withValues(alpha: 0.3),
+                        ),
                       ),
                       child: const Row(
                         mainAxisSize: MainAxisSize.min,
@@ -276,8 +285,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     label: 'Edit profile',
                     // FIX: reload stats (including photo) when returning
                     onTap: () => Navigator.of(context)
-                        .push(MaterialPageRoute(
-                            builder: (_) => const EditProfileScreen()))
+                        .push(
+                          MaterialPageRoute(
+                            builder: (_) => const EditProfileScreen(),
+                          ),
+                        )
                         .then((_) => _loadStats()),
                   ),
                   _MenuItem(
@@ -295,11 +307,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                   _MenuItem(
+                    icon: Icons.insights_outlined,
+                    label: 'Skill gap analysis',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const SkillGapScreen(),
+                      ),
+                    ),
+                  ),
+                  _MenuItem(
                     icon: Icons.bookmark_outlined,
                     label: 'Saved jobs',
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute(
-                          builder: (_) => const SavedJobsScreen()),
+                        builder: (_) => const SavedJobsScreen(),
+                      ),
                     ),
                   ),
                   _MenuItem(
@@ -307,7 +329,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     label: 'Notifications',
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute(
-                          builder: (_) => const NotificationsScreen()),
+                        builder: (_) => const NotificationsScreen(),
+                      ),
                     ),
                   ),
                   _MenuItem(
@@ -372,11 +395,7 @@ class _StatItem extends StatelessWidget {
 class _VerticalDivider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 40,
-      width: 1,
-      color: AppColors.bord(context),
-    );
+    return Container(height: 40, width: 1, color: AppColors.bord(context));
   }
 }
 

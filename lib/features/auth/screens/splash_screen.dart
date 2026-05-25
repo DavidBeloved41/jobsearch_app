@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../app/router.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/services/biometric_service.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
@@ -21,16 +22,52 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
 
   Future<void> _checkAuth() async {
     await Future.delayed(const Duration(seconds: 2));
-
     if (!mounted) return;
 
     final session = Supabase.instance.client.auth.currentSession;
 
     if (session != null) {
+      // Already logged in — go straight home
       GoRouter.of(context).go(AppRoutes.home);
-    } else {
-      GoRouter.of(context).go(AppRoutes.login);
+      return;
     }
+
+    // No active session — check if biometric login is enabled
+    final biometricEnabled = await BiometricService.isBiometricEnabled();
+    final biometricAvailable = await BiometricService.isAvailable();
+
+    if (biometricEnabled && biometricAvailable) {
+      // Auto-prompt biometrics
+      final authenticated = await BiometricService.authenticate(
+        reason: 'Sign in to SmartJob',
+      );
+
+      if (!mounted) return;
+
+      if (authenticated) {
+        // Retrieve stored credentials and sign in
+        final credentials = await BiometricService.getCredentials();
+        final email = credentials['email'];
+        final password = credentials['password'];
+
+        if (email != null && password != null) {
+          try {
+            await Supabase.instance.client.auth.signInWithPassword(
+              email: email,
+              password: password,
+            );
+            if (mounted) GoRouter.of(context).go(AppRoutes.home);
+            return;
+          } catch (e) {
+            // Credentials may be stale — fall through to login screen
+            await BiometricService.disableBiometric();
+          }
+        }
+      }
+    }
+
+    // Fall through to login screen
+    if (mounted) GoRouter.of(context).go(AppRoutes.login);
   }
 
   @override
@@ -56,7 +93,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
             ),
             const SizedBox(height: 24),
             const Text(
-              'JobSearch',
+              'SmartJob',
               style: TextStyle(
                 color: Colors.white,
                 fontSize: 32,

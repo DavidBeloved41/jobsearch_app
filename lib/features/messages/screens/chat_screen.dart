@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/supabase/supabase_service.dart';
 import '../../../core/theme/app_colors.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -33,6 +34,7 @@ class _ChatScreenState extends State<ChatScreen> {
     super.initState();
     _loadMessages();
     _subscribeToMessages();
+    SupabaseService.markMessagesAsRead(_currentUserId, widget.receiverId);
   }
 
   @override
@@ -123,6 +125,58 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  void _showChatOptions() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.surf(context),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.person_outline),
+              title: Text(
+                widget.receiverName,
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.text(context),
+                ),
+              ),
+              subtitle: widget.receiverRole.isNotEmpty
+                  ? Text(
+                      widget.receiverRole,
+                      style: TextStyle(color: AppColors.textSec(context)),
+                    )
+                  : null,
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.mark_email_read_outlined),
+              title: const Text('Mark all as read'),
+              onTap: () async {
+                final messenger = ScaffoldMessenger.of(context);
+                Navigator.pop(context);
+                await SupabaseService.markMessagesAsRead(
+                  _currentUserId,
+                  widget.receiverId,
+                );
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('Messages marked as read'),
+                    duration: Duration(seconds: 1),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   String _formatTime(String? createdAt) {
     if (createdAt == null) return '';
     final date = DateTime.parse(createdAt).toLocal();
@@ -153,7 +207,7 @@ class _ChatScreenState extends State<ChatScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.more_vert),
-            onPressed: () {},
+            onPressed: _showChatOptions,
           ),
         ],
       ),

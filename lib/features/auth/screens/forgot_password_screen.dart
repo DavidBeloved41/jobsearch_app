@@ -27,8 +27,12 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     setState(() => _isLoading = true);
 
     try {
+      // FIX: Add redirectTo to handle deep link callback
+      // Make sure 'smartjob://reset-password' is added in:
+      // Supabase Dashboard -> Authentication -> URL Configuration -> Redirect URLs
       await Supabase.instance.client.auth.resetPasswordForEmail(
         _emailController.text.trim(),
+        redirectTo: 'smartjob://reset-password?type=recovery',
       );
 
       setState(() {
@@ -38,10 +42,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     } on AuthException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.message),
-            backgroundColor: AppColors.error,
-          ),
+          SnackBar(content: Text(e.message), backgroundColor: AppColors.error),
         );
       }
       setState(() => _isLoading = false);
@@ -80,81 +81,82 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   }
 
   Widget _buildFormView() {
-  return SingleChildScrollView(
-    child: Form(
-      key: _formKey,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 24),
-          // ... rest of the content stays the same
-          Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.1),
-              shape: BoxShape.circle,
+    return SingleChildScrollView(
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 24),
+            // ... rest of the content stays the same
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.lock_reset_outlined,
+                size: 32,
+                color: AppColors.primary,
+              ),
             ),
-            child: const Icon(
-              Icons.lock_reset_outlined,
-              size: 32,
-              color: AppColors.primary,
+            const SizedBox(height: 24),
+            const Text(
+              'Forgot password?',
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
             ),
-          ),
-          const SizedBox(height: 24),
-          const Text(
-            'Forgot password?',
-            style: TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.bold,
-              color: AppColors.textPrimary,
+            const SizedBox(height: 8),
+            const Text(
+              'Enter your email address and we\'ll send you a link to reset your password.',
+              style: TextStyle(
+                fontSize: 15,
+                color: AppColors.textSecondary,
+                height: 1.5,
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Enter your email address and we\'ll send you a link to reset your password.',
-            style: TextStyle(
-              fontSize: 15,
-              color: AppColors.textSecondary,
-              height: 1.5,
+            const SizedBox(height: 32),
+            TextFormField(
+              controller: _emailController,
+              keyboardType: TextInputType.emailAddress,
+              decoration: const InputDecoration(
+                labelText: 'Email',
+                hintText: 'Enter your email',
+                prefixIcon: Icon(Icons.email_outlined),
+              ),
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter your email';
+                }
+                if (!value.contains('@')) {
+                  return 'Please enter a valid email';
+                }
+                return null;
+              },
             ),
-          ),
-          const SizedBox(height: 32),
-          TextFormField(
-            controller: _emailController,
-            keyboardType: TextInputType.emailAddress,
-            decoration: const InputDecoration(
-              labelText: 'Email',
-              hintText: 'Enter your email',
-              prefixIcon: Icon(Icons.email_outlined),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: _isLoading ? null : _sendResetEmail,
+              child: _isLoading
+                  ? const CircularProgressIndicator(color: Colors.white)
+                  : const Text('Send reset link'),
             ),
-            validator: (value) {
-              if (value == null || value.isEmpty) {
-                return 'Please enter your email';
-              }
-              if (!value.contains('@')) {
-                return 'Please enter a valid email';
-              }
-              return null;
-            },
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton(
-            onPressed: _isLoading ? null : _sendResetEmail,
-            child: _isLoading
-                ? const CircularProgressIndicator(color: Colors.white)
-                : const Text('Send reset link'),
-          ),
-          const SizedBox(height: 16),
-          Center(
-            child: TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Back to sign in'),
+            const SizedBox(height: 16),
+            Center(
+              child: TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Back to sign in'),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ));
+    );
   }
 
   Widget _buildSuccessView() {

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/utils/date_formatter.dart';
 import 'chat_screen.dart';
+import 'new_message_screen.dart';
 
 class MessagesScreen extends StatefulWidget {
   const MessagesScreen({super.key});
@@ -34,7 +36,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
     try {
       final response = await Supabase.instance.client
           .from('messages')
-          .select('sender_id, receiver_id, content, created_at')
+          .select('sender_id, receiver_id, content, created_at, is_read')
           .or('sender_id.eq.$_currentUserId,receiver_id.eq.$_currentUserId')
           .order('created_at', ascending: false);
 
@@ -50,6 +52,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
         partnerIds.add(partnerId);
         final createdAt = message['created_at'] as String? ?? '';
+        final isInbound = receiverId == _currentUserId;
+        final isUnread =
+            isInbound && message['is_read'] != true;
 
         if (!conversationMap.containsKey(partnerId)) {
           conversationMap[partnerId] = {
@@ -57,10 +62,15 @@ class _MessagesScreenState extends State<MessagesScreen> {
             'name': 'Unknown',
             'role': '',
             'message': message['content'] as String? ?? '',
-            'time': createdAt.isNotEmpty ? createdAt : 'Now',
-            'unread': 0,
+            'time': DateFormatter.relative(createdAt),
+            'unread': isUnread ? 1 : 0,
             'last_created_at': createdAt,
           };
+        } else {
+          final conv = conversationMap[partnerId]!;
+          if (isUnread) {
+            conv['unread'] = (conv['unread'] as int) + 1;
+          }
         }
       }
 
@@ -102,6 +112,23 @@ class _MessagesScreenState extends State<MessagesScreen> {
     }
   }
 
+  void _openNewMessage() {
+    if (_currentUserId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Sign in to send messages'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      return;
+    }
+    Navigator.of(context)
+        .push(
+          MaterialPageRoute(builder: (_) => const NewMessageScreen()),
+        )
+        .then((_) => _loadConversations());
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -109,178 +136,204 @@ class _MessagesScreenState extends State<MessagesScreen> {
       appBar: AppBar(
         title: const Text('Messages'),
         actions: [
-          IconButton(icon: const Icon(Icons.edit_outlined), onPressed: () {}),
+          IconButton(
+            icon: const Icon(Icons.edit_outlined),
+            onPressed: _openNewMessage,
+          ),
         ],
       ),
       body: _isLoading
           ? const Center(
               child: CircularProgressIndicator(color: AppColors.primary),
             )
-          : _conversations.isEmpty
-          ? const Center(child: Text('No conversations yet.'))
-          : ListView.builder(
-              itemCount: _conversations.length,
-              itemBuilder: (context, index) {
-                final chat = _conversations[index];
-                final bool hasUnread = (chat['unread'] as int) > 0;
-
-                return InkWell(
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => ChatScreen(
-                          receiverId: chat['id'] as String,
-                          receiverName: chat['name'] as String,
-                          receiverRole: chat['role'] as String,
-                        ),
-                      ),
-                    );
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                    decoration: BoxDecoration(
-                      color: hasUnread
-                          ? AppColors.primary.withValues(alpha: 0.05)
-                          : AppColors.surf(context),
-                      border: Border(
-                        bottom: BorderSide(color: AppColors.bord(context)),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        // Avatar
-                        Stack(
-                          children: [
-                            Container(
-                              width: 52,
-                              height: 52,
-                              decoration: BoxDecoration(
-                                color: AppColors.primary.withValues(alpha: 0.1),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(
-                                Icons.person,
-                                color: AppColors.primary,
-                                size: 28,
-                              ),
-                            ),
-                            Positioned(
-                              right: 0,
-                              bottom: 0,
-                              child: Container(
-                                width: 14,
-                                height: 14,
-                                decoration: BoxDecoration(
-                                  color: AppColors.success,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: AppColors.surf(context),
-                                    width: 2,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(width: 12),
-
-                        // Message content
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    chat['name'] as String,
-                                    style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: hasUnread
-                                          ? FontWeight.w600
-                                          : FontWeight.w500,
-                                      color: AppColors.text(context),
-                                    ),
-                                  ),
-                                  Text(
-                                    chat['time'] as String,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: hasUnread
-                                          ? AppColors.primary
-                                          : AppColors.textSec(context),
-                                      fontWeight: hasUnread
-                                          ? FontWeight.w600
-                                          : FontWeight.normal,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                chat['role'] as String,
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: AppColors.primary,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      chat['message'] as String,
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        color: hasUnread
-                                            ? AppColors.text(context)
-                                            : AppColors.textSec(context),
-                                        fontWeight: hasUnread
-                                            ? FontWeight.w500
-                                            : FontWeight.normal,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  if (hasUnread)
-                                    Container(
-                                      margin: const EdgeInsets.only(left: 8),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 2,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.primary,
-                                        borderRadius: BorderRadius.circular(20),
-                                      ),
-                                      child: Text(
-                                        chat['unread'].toString(),
-                                        style: const TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
+          : _currentUserId.isEmpty
+              ? Center(
+                  child: Text(
+                    'Sign in to view your messages',
+                    style: TextStyle(color: AppColors.textSec(context)),
                   ),
-                );
-              },
-            ),
+                )
+              : _conversations.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            'No conversations yet.',
+                            style: TextStyle(
+                              color: AppColors.textSec(context),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          ElevatedButton.icon(
+                            onPressed: _openNewMessage,
+                            icon: const Icon(Icons.edit_outlined),
+                            label: const Text('Start a conversation'),
+                          ),
+                        ],
+                      ),
+                    )
+                  : RefreshIndicator(
+                      onRefresh: _loadConversations,
+                      child: ListView.builder(
+                        itemCount: _conversations.length,
+                        itemBuilder: (context, index) {
+                          final chat = _conversations[index];
+                          final bool hasUnread = (chat['unread'] as int) > 0;
+
+                          return InkWell(
+                            onTap: () async {
+                              await Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (_) => ChatScreen(
+                                    receiverId: chat['id'] as String,
+                                    receiverName: chat['name'] as String,
+                                    receiverRole: chat['role'] as String,
+                                  ),
+                                ),
+                              );
+                              _loadConversations();
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                              decoration: BoxDecoration(
+                                color: hasUnread
+                                    ? AppColors.primary
+                                        .withValues(alpha: 0.05)
+                                    : AppColors.surf(context),
+                                border: Border(
+                                  bottom: BorderSide(
+                                    color: AppColors.bord(context),
+                                  ),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 52,
+                                    height: 52,
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primary
+                                          .withValues(alpha: 0.1),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.person,
+                                      color: AppColors.primary,
+                                      size: 28,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Text(
+                                              chat['name'] as String,
+                                              style: TextStyle(
+                                                fontSize: 15,
+                                                fontWeight: hasUnread
+                                                    ? FontWeight.w600
+                                                    : FontWeight.w500,
+                                                color: AppColors.text(context),
+                                              ),
+                                            ),
+                                            Text(
+                                              chat['time'] as String,
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: hasUnread
+                                                    ? AppColors.primary
+                                                    : AppColors.textSec(
+                                                        context,
+                                                      ),
+                                                fontWeight: hasUnread
+                                                    ? FontWeight.w600
+                                                    : FontWeight.normal,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 4),
+                                        if ((chat['role'] as String)
+                                            .isNotEmpty)
+                                          Text(
+                                            chat['role'] as String,
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              color: AppColors.primary,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        const SizedBox(height: 4),
+                                        Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                chat['message'] as String,
+                                                style: TextStyle(
+                                                  fontSize: 13,
+                                                  color: hasUnread
+                                                      ? AppColors.text(context)
+                                                      : AppColors.textSec(
+                                                          context,
+                                                        ),
+                                                  fontWeight: hasUnread
+                                                      ? FontWeight.w500
+                                                      : FontWeight.normal,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                            if (hasUnread)
+                                              Container(
+                                                margin: const EdgeInsets.only(
+                                                  left: 8,
+                                                ),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                  horizontal: 8,
+                                                  vertical: 2,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: AppColors.primary,
+                                                  borderRadius:
+                                                      BorderRadius.circular(
+                                                    20,
+                                                  ),
+                                                ),
+                                                child: Text(
+                                                  chat['unread'].toString(),
+                                                  style: const TextStyle(
+                                                    fontSize: 11,
+                                                    color: Colors.white,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
     );
   }
 }

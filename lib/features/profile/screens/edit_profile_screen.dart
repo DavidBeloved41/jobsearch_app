@@ -84,22 +84,26 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 ListTile(
-                  leading: Icon(Icons.photo_library,
-                      color: theme.colorScheme.onSurface),
-                  title: Text('Gallery',
-                      style:
-                          TextStyle(color: theme.colorScheme.onSurface)),
-                  onTap: () =>
-                      Navigator.pop(context, ImageSource.gallery),
+                  leading: Icon(
+                    Icons.photo_library,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                  title: Text(
+                    'Gallery',
+                    style: TextStyle(color: theme.colorScheme.onSurface),
+                  ),
+                  onTap: () => Navigator.pop(context, ImageSource.gallery),
                 ),
                 ListTile(
-                  leading: Icon(Icons.camera_alt,
-                      color: theme.colorScheme.onSurface),
-                  title: Text('Camera',
-                      style:
-                          TextStyle(color: theme.colorScheme.onSurface)),
-                  onTap: () =>
-                      Navigator.pop(context, ImageSource.camera),
+                  leading: Icon(
+                    Icons.camera_alt,
+                    color: theme.colorScheme.onSurface,
+                  ),
+                  title: Text(
+                    'Camera',
+                    style: TextStyle(color: theme.colorScheme.onSurface),
+                  ),
+                  onTap: () => Navigator.pop(context, ImageSource.camera),
                 ),
               ],
             ),
@@ -124,7 +128,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       final bytes = await image.readAsBytes();
       final fileName = '$userId/avatar.jpg';
 
-      await Supabase.instance.client.storage.from('avatars').uploadBinary(
+      debugPrint('Uploading photo to avatars bucket');
+      await Supabase.instance.client.storage
+          .from('avatars')
+          .uploadBinary(
             fileName,
             bytes,
             fileOptions: const FileOptions(
@@ -132,10 +139,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               upsert: true,
             ),
           );
+      debugPrint('Photo uploaded successfully to: $fileName');
 
       final url = Supabase.instance.client.storage
           .from('avatars')
           .getPublicUrl(fileName);
+      debugPrint('Public URL: $url');
 
       await SupabaseService.updateProfile(userId, {
         'profile_photo_url': url,
@@ -180,8 +189,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         'location': _locationController.text.trim(),
         'bio': _bioController.text.trim(),
         'job_title': _jobTitleController.text.trim(),
-        'years_of_experience':
-            int.tryParse(_yearsOfExperienceController.text.trim()),
+        'years_of_experience': int.tryParse(
+          _yearsOfExperienceController.text.trim(),
+        ),
         'is_open_to_work': _isOpenToWork,
         'updated_at': DateTime.now().toIso8601String(),
       });
@@ -218,8 +228,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        backgroundColor: theme.appBarTheme.backgroundColor ??
-            theme.scaffoldBackgroundColor,
+        backgroundColor:
+            theme.appBarTheme.backgroundColor ?? theme.scaffoldBackgroundColor,
         elevation: 0,
         iconTheme: IconThemeData(color: colorScheme.onSurface),
         title: Text(
@@ -250,9 +260,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         ],
       ),
       body: _isFetching
-          ? Center(
-              child: CircularProgressIndicator(color: colorScheme.primary),
-            )
+          ? Center(child: CircularProgressIndicator(color: colorScheme.primary))
           : SingleChildScrollView(
               padding: const EdgeInsets.all(16),
               child: Form(
@@ -270,13 +278,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                               width: 90,
                               height: 90,
                               decoration: BoxDecoration(
-                                color: colorScheme.primary
-                                    .withValues(alpha: 0.15),
+                                color: colorScheme.primary.withValues(
+                                  alpha: 0.15,
+                                ),
                                 shape: BoxShape.circle,
                                 image: _profilePhotoUrl != null
                                     ? DecorationImage(
-                                        image: NetworkImage(
-                                            _profilePhotoUrl!),
+                                        image: NetworkImage(_profilePhotoUrl!),
                                         fit: BoxFit.cover,
                                       )
                                     : null,
@@ -366,8 +374,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                                 'Let recruiters know you\'re available',
                                 style: TextStyle(
                                   fontSize: 13,
-                                  color: colorScheme.onSurface
-                                      .withValues(alpha: 0.6),
+                                  color: colorScheme.onSurface.withValues(
+                                    alpha: 0.6,
+                                  ),
                                 ),
                               ),
                             ],
@@ -392,9 +401,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       style: TextStyle(color: colorScheme.onSurface),
                       decoration: InputDecoration(
                         labelText: 'Full name',
-                        prefixIcon: Icon(Icons.person_outlined,
-                            color: colorScheme.onSurface
-                                .withValues(alpha: 0.6)),
+                        prefixIcon: Icon(
+                          Icons.person_outlined,
+                          color: colorScheme.onSurface.withValues(alpha: 0.6),
+                        ),
                       ),
                       validator: (value) {
                         if (value == null || value.isEmpty) {
@@ -411,9 +421,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       style: TextStyle(color: colorScheme.onSurface),
                       decoration: InputDecoration(
                         labelText: 'Phone number',
-                        prefixIcon: Icon(Icons.phone_outlined,
-                            color: colorScheme.onSurface
-                                .withValues(alpha: 0.6)),
+                        prefixIcon: Icon(
+                          Icons.phone_outlined,
+                          color: colorScheme.onSurface.withValues(alpha: 0.6),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -424,9 +435,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       decoration: InputDecoration(
                         labelText: 'Location',
                         hintText: 'e.g. Accra, Ghana',
-                        prefixIcon: Icon(Icons.location_on_outlined,
-                            color: colorScheme.onSurface
-                                .withValues(alpha: 0.6)),
+                        prefixIcon: Icon(
+                          Icons.location_on_outlined,
+                          color: colorScheme.onSurface.withValues(alpha: 0.6),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 24),
@@ -441,9 +453,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       decoration: InputDecoration(
                         labelText: 'Job title',
                         hintText: 'e.g. Flutter Developer',
-                        prefixIcon: Icon(Icons.work_outlined,
-                            color: colorScheme.onSurface
-                                .withValues(alpha: 0.6)),
+                        prefixIcon: Icon(
+                          Icons.work_outlined,
+                          color: colorScheme.onSurface.withValues(alpha: 0.6),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -455,9 +468,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       decoration: InputDecoration(
                         labelText: 'Years of experience',
                         hintText: 'e.g. 3',
-                        prefixIcon: Icon(Icons.timeline_outlined,
-                            color: colorScheme.onSurface
-                                .withValues(alpha: 0.6)),
+                        prefixIcon: Icon(
+                          Icons.timeline_outlined,
+                          color: colorScheme.onSurface.withValues(alpha: 0.6),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -469,9 +483,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       decoration: InputDecoration(
                         labelText: 'Bio',
                         hintText: 'Tell recruiters about yourself...',
-                        prefixIcon: Icon(Icons.notes_outlined,
-                            color: colorScheme.onSurface
-                                .withValues(alpha: 0.6)),
+                        prefixIcon: Icon(
+                          Icons.notes_outlined,
+                          color: colorScheme.onSurface.withValues(alpha: 0.6),
+                        ),
                         alignLabelWithHint: true,
                       ),
                     ),
@@ -480,8 +495,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     ElevatedButton(
                       onPressed: _isLoading ? null : _saveProfile,
                       child: _isLoading
-                          ? const CircularProgressIndicator(
-                              color: Colors.white)
+                          ? const CircularProgressIndicator(color: Colors.white)
                           : const Text('Save changes'),
                     ),
                     const SizedBox(height: 32),

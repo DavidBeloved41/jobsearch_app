@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/services/offline_cache_service.dart';
 import '../../../core/supabase/supabase_service.dart';
 import '../../../core/theme/app_colors.dart';
 
@@ -16,11 +17,40 @@ class _ResumeScreenState extends State<ResumeScreen> {
   String? _resumeName;
   String? _uploadDate;
   bool _isUploading = false;
+  final _draftController = TextEditingController();
+  bool _draftLoaded = false;
 
   @override
   void initState() {
     super.initState();
     _loadExistingResume();
+    _loadDraft();
+  }
+
+  @override
+  void dispose() {
+    _draftController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadDraft() async {
+    final draft = await OfflineCacheService.getResumeDraft();
+    if (draft != null && draft.isNotEmpty) {
+      _draftController.text = draft;
+    }
+    setState(() => _draftLoaded = true);
+  }
+
+  Future<void> _saveDraft() async {
+    await OfflineCacheService.saveResumeDraft(_draftController.text);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Draft saved locally'),
+          duration: Duration(seconds: 1),
+        ),
+      );
+    }
   }
 
   Future<void> _loadExistingResume() async {
@@ -68,6 +98,7 @@ class _ResumeScreenState extends State<ResumeScreen> {
       final userId = Supabase.instance.client.auth.currentUser!.id;
       final fileName = '$userId/resume.${file.extension}';
 
+      debugPrint('Uploading resume to resumes bucket: $fileName');
       await Supabase.instance.client.storage
           .from('resumes')
           .uploadBinary(
@@ -75,10 +106,12 @@ class _ResumeScreenState extends State<ResumeScreen> {
             file.bytes!,
             fileOptions: const FileOptions(upsert: true),
           );
+      debugPrint('Resume uploaded successfully');
 
       final url = Supabase.instance.client.storage
           .from('resumes')
           .getPublicUrl(fileName);
+      debugPrint('Resume public URL: $url');
 
       await SupabaseService.updateProfile(userId, {
         'resume_url': url,
@@ -346,6 +379,87 @@ class _ResumeScreenState extends State<ResumeScreen> {
               ),
             ),
             const SizedBox(height: 20),
+
+            if (_draftLoaded) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.surf(context),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.bord(context)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.edit_note_outlined,
+                          color: AppColors.primary,
+                          size: 22,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Resume draft (offline)',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.text(context),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Saved on this device — works without internet',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSec(context),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _draftController,
+                      maxLines: 8,
+                      decoration: const InputDecoration(
+                        hintText: 'Notes, summary, or cover letter draft...',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () async {
+                              final messenger = ScaffoldMessenger.of(context);
+                              await OfflineCacheService.clearResumeDraft();
+                              _draftController.clear();
+                              messenger.showSnackBar(
+                                const SnackBar(
+                                  content: Text('Draft cleared'),
+                                  duration: Duration(seconds: 1),
+                                ),
+                              );
+                            },
+                            child: const Text('Clear'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: _saveDraft,
+                            child: const Text('Save draft'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
 
             // ── Supported formats ─────────────────────────────────────────
             Container(

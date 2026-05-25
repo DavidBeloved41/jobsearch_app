@@ -261,7 +261,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                               await Supabase.instance.client.auth
                                   .resetPasswordForEmail(
                                     email,
-                                    redirectTo: 'smartjob://reset-password',
+                                    redirectTo:
+                                        'smartjob://reset-password?type=recovery',
                                   );
                               if (context.mounted) {
                                 Navigator.pop(context);

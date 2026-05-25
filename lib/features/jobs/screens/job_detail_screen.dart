@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/services/match_score_service.dart';
 import '../../../core/supabase/supabase_service.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/company_logo.dart';
 import '../../auth/screens/login_screen.dart';
 
 class JobDetailScreen extends StatefulWidget {
@@ -17,21 +19,53 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   bool _isApplying = false;
   bool _isSaved = false;
   bool _hasApplied = false;
+  int _matchScore = 0;
 
   @override
   void initState() {
     super.initState();
     _checkIfSaved();
     _checkIfApplied();
+    _loadMatchScore();
+  }
+
+  Future<void> _loadMatchScore() async {
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) {
+      setState(() => _matchScore = MatchScoreService.calculate(job: widget.job, userSkillNames: []));
+      return;
+    }
+    final profile = await SupabaseService.getProfile(userId);
+    final skills = await SupabaseService.getUserSkillNames(userId);
+    final years = profile?['years_of_experience'];
+    final userYears = years is int ? years : int.tryParse('$years');
+    if (mounted) {
+      setState(() {
+        _matchScore = MatchScoreService.calculate(
+          job: widget.job,
+          userSkillNames: skills,
+          userYearsExperience: userYears,
+        );
+      });
+    }
   }
 
   Future<void> _checkIfSaved() async {
     try {
       final userId = Supabase.instance.client.auth.currentUser?.id;
-      if (userId == null) return;
+      if (userId == null) {
+        debugPrint('No user ID available for checking saved jobs');
+        return;
+      }
+      debugPrint(
+        'Checking if job ${widget.job['id']} is saved for user $userId',
+      );
       final saved = await SupabaseService.getSavedJobs(userId);
-      final isSaved = saved.any((s) => s['job_id'] == widget.job['id']);
-      setState(() => _isSaved = isSaved);
+      if (mounted) {
+        final isSaved = saved.any((s) => s['job_id'] == widget.job['id']);
+        setState(() => _isSaved = isSaved);
+        debugPrint('Job saved status: $isSaved');
+      }
     } catch (e) {
       debugPrint('Error checking saved: $e');
     }
@@ -40,31 +74,81 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   Future<void> _checkIfApplied() async {
     try {
       final userId = Supabase.instance.client.auth.currentUser?.id;
-      if (userId == null) return;
+      if (userId == null) {
+        debugPrint('No user ID available for checking applications');
+        return;
+      }
+      debugPrint(
+        'Checking if user $userId has applied for job ${widget.job['id']}',
+      );
       final applications = await SupabaseService.getApplications(userId);
-      final hasApplied =
-          applications.any((a) => a['job_id'] == widget.job['id']);
-      setState(() => _hasApplied = hasApplied);
+      if (mounted) {
+        final hasApplied = applications.any(
+          (a) => a['job_id'] == widget.job['id'],
+        );
+        setState(() => _hasApplied = hasApplied);
+        debugPrint('Job application status: $hasApplied');
+      }
     } catch (e) {
       debugPrint('Error checking application: $e');
     }
   }
 
+  Future<String?> _promptCoverLetter() async {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Apply for this job'),
+        content: TextField(
+          controller: controller,
+          maxLines: 5,
+          decoration: const InputDecoration(
+            hintText: 'Cover letter (optional)',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final text = controller.text.trim();
+              Navigator.pop(context, text.isEmpty ? '' : text);
+            },
+            child: const Text('Submit'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _applyForJob() async {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) {
+      debugPrint('No user available for job application');
       _showLoginPrompt();
       return;
     }
 
+    final coverLetter = await _promptCoverLetter();
+    if (coverLetter == null || !mounted) return;
+
     setState(() => _isApplying = true);
     try {
-      await SupabaseService.applyForJob(user.id, widget.job['id'], null);
-      setState(() {
-        _hasApplied = true;
-        _isApplying = false;
-      });
+      debugPrint('Applying for job ${widget.job['id']} with user ${user.id}');
+      await SupabaseService.applyForJob(
+        user.id,
+        widget.job['id'],
+        coverLetter.isEmpty ? null : coverLetter,
+      );
       if (mounted) {
+        setState(() {
+          _hasApplied = true;
+          _isApplying = false;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Application submitted successfully!'),
@@ -73,13 +157,16 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
         );
       }
     } catch (e) {
-      setState(() => _isApplying = false);
+      debugPrint('Error applying for job: $e');
       if (mounted) {
+        setState(() => _isApplying = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(e.toString().contains('duplicate')
-                ? 'You have already applied for this job'
-                : 'Failed to apply. Please try again.'),
+            content: Text(
+              e.toString().contains('duplicate')
+                  ? 'You have already applied for this job'
+                  : 'Failed to apply. Please try again.',
+            ),
             backgroundColor: AppColors.error,
           ),
         );
@@ -90,19 +177,32 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   Future<void> _toggleSave() async {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) {
+      debugPrint('No user available for save job operation');
       _showLoginPrompt();
       return;
     }
 
     try {
       if (_isSaved) {
+        debugPrint('Unsaving job ${widget.job['id']} for user ${user.id}');
         await SupabaseService.unsaveJob(user.id, widget.job['id']);
       } else {
+        debugPrint('Saving job ${widget.job['id']} for user ${user.id}');
         await SupabaseService.saveJob(user.id, widget.job['id']);
       }
-      setState(() => _isSaved = !_isSaved);
+      if (mounted) {
+        setState(() => _isSaved = !_isSaved);
+      }
     } catch (e) {
       debugPrint('Error saving job: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to save job. Please try again.'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
     }
   }
 
@@ -126,8 +226,11 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                   color: AppColors.primary.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.lock_outline,
-                    color: AppColors.primary, size: 28),
+                child: const Icon(
+                  Icons.lock_outline,
+                  color: AppColors.primary,
+                  size: 28,
+                ),
               ),
               const SizedBox(height: 16),
               Text(
@@ -152,8 +255,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                 onPressed: () {
                   Navigator.pop(context);
                   Navigator.of(context).push(
-                    MaterialPageRoute(
-                        builder: (_) => const LoginScreen()),
+                    MaterialPageRoute(builder: (_) => const LoginScreen()),
                   );
                 },
                 child: const Text('Sign in'),
@@ -187,8 +289,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
           IconButton(
             icon: Icon(
               _isSaved ? Icons.bookmark : Icons.bookmark_border,
-              color:
-                  _isSaved ? AppColors.primary : AppColors.textSec(context),
+              color: _isSaved ? AppColors.primary : AppColors.textSec(context),
             ),
             onPressed: _toggleSave,
           ),
@@ -210,15 +311,9 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
               ),
               child: Column(
                 children: [
-                  Container(
-                    width: 70,
-                    height: 70,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: const Icon(Icons.business,
-                        color: AppColors.primary, size: 40),
+                  CompanyLogo(
+                    logoUrl: company?['logo_url'] as String?,
+                    size: 70,
                   ),
                   const SizedBox(height: 16),
                   Text(
@@ -238,6 +333,25 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                       color: AppColors.textSec(context),
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '$_matchScore% match',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 16),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -247,10 +361,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                         label: widget.job['location'] ?? '',
                       ),
                       const SizedBox(width: 8),
-                      _InfoChip(
-                        icon: Icons.work_outline,
-                        label: workModel,
-                      ),
+                      _InfoChip(icon: Icons.work_outline, label: workModel),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -348,8 +459,9 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
             ElevatedButton(
               onPressed: _hasApplied || _isApplying ? null : _applyForJob,
               style: ElevatedButton.styleFrom(
-                backgroundColor:
-                    _hasApplied ? AppColors.success : AppColors.primary,
+                backgroundColor: _hasApplied
+                    ? AppColors.success
+                    : AppColors.primary,
               ),
               child: _isApplying
                   ? const CircularProgressIndicator(color: Colors.white)
@@ -385,10 +497,7 @@ class _InfoChip extends StatelessWidget {
           const SizedBox(width: 4),
           Text(
             label,
-            style: TextStyle(
-              fontSize: 13,
-              color: AppColors.textSec(context),
-            ),
+            style: TextStyle(fontSize: 13, color: AppColors.textSec(context)),
           ),
         ],
       ),
