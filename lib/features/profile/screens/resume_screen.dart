@@ -137,9 +137,19 @@ class _ResumeScreenState extends State<ResumeScreen> {
     } catch (e) {
       setState(() => _isUploading = false);
       if (mounted) {
+        final raw = e.toString();
+        final lower = raw.toLowerCase();
+        final isRls = lower.contains('row-level security') ||
+            lower.contains('unauthorized') ||
+            lower.contains('403');
+        final details = raw.length > 180 ? '${raw.substring(0, 180)}…' : raw;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to upload: $e'),
+            content: Text(
+              isRls
+                  ? 'Resume upload blocked by storage RLS (403). Check Supabase bucket `resumes` policies (and file path prefix like `<auth.uid()>/...`).'
+                  : 'Failed to upload resume: $details',
+            ),
             backgroundColor: AppColors.error,
           ),
         );

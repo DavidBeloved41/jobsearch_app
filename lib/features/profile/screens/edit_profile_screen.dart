@@ -167,9 +167,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     } catch (e) {
       setState(() => _isUploadingPhoto = false);
       if (mounted) {
+        final raw = e.toString();
+        final lower = raw.toLowerCase();
+        final isRls = lower.contains('row-level security') ||
+            lower.contains('unauthorized') ||
+            lower.contains('403');
+        final details = raw.length > 180 ? '${raw.substring(0, 180)}…' : raw;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to upload photo: $e'),
+            content: Text(
+              isRls
+                  ? 'Photo upload blocked by storage RLS (403). Check Supabase bucket `avatars` policies (and file path prefix like `<auth.uid()>/...`).'
+                  : 'Failed to upload photo: $details',
+            ),
             backgroundColor: AppColors.error,
           ),
         );

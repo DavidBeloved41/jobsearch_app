@@ -160,12 +160,18 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
       debugPrint('Error applying for job: $e');
       if (mounted) {
         setState(() => _isApplying = false);
+        final raw = e.toString();
+        final lower = raw.toLowerCase();
+        final isDuplicate = lower.contains('duplicate') ||
+            lower.contains('unique') ||
+            lower.contains('already');
+        final details = raw.length > 180 ? '${raw.substring(0, 180)}…' : raw;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              e.toString().contains('duplicate')
+              isDuplicate
                   ? 'You have already applied for this job'
-                  : 'Failed to apply. Please try again.',
+                  : 'Failed to apply. $details',
             ),
             backgroundColor: AppColors.error,
           ),
