@@ -262,7 +262,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                   .resetPasswordForEmail(
                                     email,
                                     redirectTo:
-                                        'smartjob://reset-password?type=recovery',
+                                        'smartjob://reset-password',
                                   );
                               if (context.mounted) {
                                 Navigator.pop(context);

@@ -32,7 +32,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       // Supabase Dashboard -> Authentication -> URL Configuration -> Redirect URLs
       await Supabase.instance.client.auth.resetPasswordForEmail(
         _emailController.text.trim(),
-        redirectTo: 'smartjob://reset-password?type=recovery',
+        redirectTo: 'smartjob://reset-password',
       );
 
       setState(() {
