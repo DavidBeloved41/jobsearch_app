@@ -121,6 +121,52 @@ class _JobFiltersSheetState extends State<JobFiltersSheet> {
             ),
             const SizedBox(height: 16),
             Text(
+              'Work model',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSec(context),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final option in ['all', 'remote', 'hybrid', 'on-site'])
+                  ChoiceChip(
+                    label: Text(option == 'all' ? 'Any' : option),
+                    selected: _filters.workModel == option,
+                    onSelected: (_) =>
+                        setState(() => _filters = _filters.copyWith(workModel: option)),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Employment type',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSec(context),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                for (final option in ['all', 'full-time', 'contract'])
+                  ChoiceChip(
+                    label: Text(option == 'all' ? 'Any' : option),
+                    selected: _filters.employmentType == option,
+                    onSelected: (_) => setState(
+                      () => _filters =
+                          _filters.copyWith(employmentType: option),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Text(
               'Salary range (USD / year)',
               style: TextStyle(
                 fontSize: 13,

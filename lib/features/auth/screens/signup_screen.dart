@@ -43,6 +43,25 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
       );
 
       if (response.user != null) {
+        // FIX: Create profile record immediately after signup
+        // This prevents FK constraint violations when user tries to apply for jobs, save jobs, etc.
+        try {
+          await Supabase.instance.client.from('profiles').insert({
+            'id': response.user!.id,
+            'email': _emailController.text.trim(),
+            'full_name': _fullNameController.text.trim(),
+            'created_at': DateTime.now().toIso8601String(),
+            'is_open_to_work': true,
+          });
+          debugPrint('Profile created for user ${response.user!.id}');
+        } catch (profileError) {
+          debugPrint(
+            'Warning: Could not create profile immediately: $profileError',
+          );
+          // Don't fail signup if profile creation fails - it might be a trigger issue
+          // Profile might be created by a database trigger
+        }
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(

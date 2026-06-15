@@ -12,6 +12,9 @@ import 'skill_gap_screen.dart';
 import 'saved_jobs_screen.dart';
 import 'notifications_screen.dart';
 import 'help_screen.dart';
+import 'career_advice_screen.dart';
+import 'profile_visibility_screen.dart';
+import '../../employer/screens/employer_candidates_screen.dart';
 import 'settings_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -330,6 +333,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute(
                         builder: (_) => const NotificationsScreen(),
+                      ),
+                    ),
+                  ),
+                  _MenuItem(
+                    icon: Icons.visibility_outlined,
+                    label: 'Profile visibility',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const ProfileVisibilityScreen(),
+                      ),
+                    ),
+                  ),
+                  _MenuItem(
+                    icon: Icons.people_outline,
+                    label: 'Browse candidates (Employer)',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const EmployerCandidatesScreen(),
+                      ),
+                    ),
+                  ),
+                  _MenuItem(
+                    icon: Icons.menu_book_outlined,
+                    label: 'Career advice',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const CareerAdviceScreen(),
                       ),
                     ),
                   ),

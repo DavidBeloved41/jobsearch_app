@@ -1,8 +1,12 @@
+import 'dart:async';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/models/job_filters.dart';
+import '../../../core/models/match_profile_context.dart';
+import '../../../core/services/ai_service.dart';
 import '../../../core/services/match_score_service.dart';
+import '../../../core/services/natural_language_search_service.dart';
 import '../../../core/services/notification_service.dart';
 import '../../../core/services/offline_cache_service.dart';
 import '../../../core/supabase/supabase_service.dart';
@@ -91,6 +95,12 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
   Set<String> _savedJobIds = {};
   List<String> _userSkillNames = [];
   int? _userYearsExperience;
+  MatchProfileContext _matchContext = const MatchProfileContext();
+  String? _nlSearchSummary;
+  String? _experienceLevelFilter;
+  int _pendingSyncCount = 0;
+  Timer? _searchDebounce;
+  bool _aiRankingActive = false;
 
   final List<Map<String, String>> _filters = [
     {'label': 'All', 'value': 'all'},
@@ -105,10 +115,30 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
   void initState() {
     super.initState();
     _loadJobs();
+    _syncOfflineChanges();
+  }
+
+  Future<void> _syncOfflineChanges() async {
+    final synced = await OfflineSyncService.syncPendingChanges();
+    final pending = await OfflineCacheService.getPendingApplicationCount();
+    if (mounted) {
+      setState(() => _pendingSyncCount = pending);
+      if (synced > 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Synced $synced offline change${synced == 1 ? '' : 's'}'),
+            backgroundColor: AppColors.success,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+        _loadJobs();
+      }
+    }
   }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -128,8 +158,26 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
 
     _savedJobIds = savedIds;
     _userSkillNames = skills;
-    final years = profile?['years_of_experience'];
-    _userYearsExperience = years is int ? years : int.tryParse('$years');
+    _matchContext = MatchProfileContext.fromProfile(profile, skills);
+    _userYearsExperience = _matchContext.yearsExperience;
+  }
+
+  String? get _effectiveWorkModel {
+    if (_advancedFilters.workModel != 'all') return _advancedFilters.workModel;
+    if (['remote', 'hybrid', 'on-site'].contains(_selectedFilter)) {
+      return _selectedFilter;
+    }
+    return null;
+  }
+
+  String? get _effectiveEmploymentType {
+    if (_advancedFilters.employmentType != 'all') {
+      return _advancedFilters.employmentType;
+    }
+    if (['full-time', 'contract'].contains(_selectedFilter)) {
+      return _selectedFilter;
+    }
+    return null;
   }
 
   Future<bool> _hasConnection() async {
@@ -138,22 +186,19 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
   }
 
   Future<void> _loadJobs() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _aiRankingActive = false;
+    });
     final online = await _hasConnection();
 
     try {
       if (online) {
         await _loadUserContext();
         final jobs = await SupabaseService.getJobs(
-          workModel: (_selectedFilter == 'remote' ||
-                  _selectedFilter == 'hybrid' ||
-                  _selectedFilter == 'on-site')
-              ? _selectedFilter
-              : null,
-          employmentType: (_selectedFilter == 'full-time' ||
-                  _selectedFilter == 'contract')
-              ? _selectedFilter
-              : null,
+          workModel: _effectiveWorkModel,
+          employmentType: _effectiveEmploymentType,
+          experienceLevel: _experienceLevelFilter,
           searchQuery: _searchQuery.isNotEmpty ? _searchQuery : null,
           minSalary: _advancedFilters.minSalary,
           maxSalary: _advancedFilters.maxSalary,
@@ -175,14 +220,40 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
               job: a,
               userSkillNames: _userSkillNames,
               userYearsExperience: _userYearsExperience,
+              profile: _matchContext,
             );
             final scoreB = MatchScoreService.calculate(
               job: b,
               userSkillNames: _userSkillNames,
               userYearsExperience: _userYearsExperience,
+              profile: _matchContext,
             );
             return scoreB.compareTo(scoreA);
           });
+
+          if (AiService.isConfigured && displayJobs.length > 1) {
+            final profile = await SupabaseService.getProfile(
+              Supabase.instance.client.auth.currentUser!.id,
+            );
+            final rankedIds = await AiService.rankJobIds(
+              jobs: displayJobs,
+              profile: profile,
+              skills: _userSkillNames,
+            );
+            if (rankedIds != null && rankedIds.isNotEmpty) {
+              final byId = {for (final j in displayJobs) j['id']: j};
+              final reordered = <Map<String, dynamic>>[];
+              for (final id in rankedIds) {
+                final job = byId[id];
+                if (job != null) reordered.add(job);
+              }
+              for (final job in displayJobs) {
+                if (!rankedIds.contains(job['id'])) reordered.add(job);
+              }
+              displayJobs = reordered;
+              _aiRankingActive = true;
+            }
+          }
         }
 
         await OfflineCacheService.cacheJobs(displayJobs);
@@ -197,6 +268,7 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
             jobs: displayJobs,
             userSkillNames: _userSkillNames,
             userYearsExperience: _userYearsExperience,
+            profile: _matchContext,
           );
         }
 
@@ -232,14 +304,55 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
       builder: (_) => JobFiltersSheet(initialFilters: _advancedFilters),
     );
     if (result != null) {
-      setState(() => _advancedFilters = result);
+      setState(() {
+        _advancedFilters = result;
+        if (result.workModel != 'all') {
+          _selectedFilter = result.workModel;
+        } else if (result.employmentType != 'all') {
+          _selectedFilter = result.employmentType;
+        } else if (!['remote', 'hybrid', 'on-site', 'full-time', 'contract']
+            .contains(_selectedFilter)) {
+          _selectedFilter = 'all';
+        }
+      });
       _loadJobs();
     }
   }
 
   void _onSearchChanged(String value) {
-    setState(() => _searchQuery = value);
-    _loadJobs();
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 450), () async {
+      if (value.trim().isEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _searchQuery = '';
+          _nlSearchSummary = null;
+          _experienceLevelFilter = null;
+        });
+        _loadJobs();
+        return;
+      }
+
+      final parsed = await NaturalLanguageSearchService.parseSmart(value);
+      if (!mounted) return;
+      setState(() {
+        _searchQuery = parsed.keywordQuery ?? value.trim();
+        if (parsed.hasStructuredFilters) {
+          _advancedFilters = parsed.filters;
+          _experienceLevelFilter = parsed.experienceLevel;
+          _nlSearchSummary = parsed.summary;
+          if (parsed.filters.workModel != 'all') {
+            _selectedFilter = parsed.filters.workModel;
+          } else if (parsed.filters.employmentType != 'all') {
+            _selectedFilter = parsed.filters.employmentType;
+          }
+        } else {
+          _nlSearchSummary = null;
+          _experienceLevelFilter = null;
+        }
+      });
+      _loadJobs();
+    });
   }
 
   String _formatSalary(Map<String, dynamic> job) {
@@ -284,6 +397,45 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              if (_pendingSyncCount > 0)
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: AppColors.primary.withValues(alpha: 0.2),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.sync_outlined,
+                        color: AppColors.primary,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '$_pendingSyncCount application(s) waiting to sync',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: AppColors.text(context),
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _syncOfflineChanges,
+                        child: const Text('Sync now'),
+                      ),
+                    ],
+                  ),
+                ),
               if (_isOffline)
                 Container(
                   width: double.infinity,
@@ -356,7 +508,8 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
                   style: TextStyle(color: AppColors.text(context)),
                   onChanged: _onSearchChanged,
                   decoration: InputDecoration(
-                    hintText: 'Search jobs, companies...',
+                    hintText:
+                        'Try: Senior roles in London remote over \$60k...',
                     hintStyle:
                         TextStyle(color: AppColors.textSec(context)),
                     prefixIcon: Icon(Icons.search,
@@ -377,6 +530,25 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
                   ),
                 ),
               ),
+              if (_nlSearchSummary != null && _nlSearchSummary!.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Icon(Icons.auto_awesome,
+                        size: 14, color: AppColors.primary),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Parsed: $_nlSearchSummary',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSec(context),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 20),
 
               // Filter chips
@@ -387,7 +559,25 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
                     final isSelected = _selectedFilter == filter['value'];
                     return GestureDetector(
                       onTap: () {
-                        setState(() => _selectedFilter = filter['value']!);
+                        setState(() {
+                          _selectedFilter = filter['value']!;
+                          final value = filter['value']!;
+                          if (value == 'all') {
+                            _advancedFilters = _advancedFilters.copyWith(
+                              workModel: 'all',
+                              employmentType: 'all',
+                            );
+                          } else if (['remote', 'hybrid', 'on-site']
+                              .contains(value)) {
+                            _advancedFilters =
+                                _advancedFilters.copyWith(workModel: value);
+                          } else if (['full-time', 'contract']
+                              .contains(value)) {
+                            _advancedFilters = _advancedFilters.copyWith(
+                              employmentType: value,
+                            );
+                          }
+                        });
                         _loadJobs();
                       },
                       child: Container(
@@ -423,7 +613,11 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
               const SizedBox(height: 20),
 
               Text(
-                _forYouMode ? 'Recommended for you' : 'All jobs',
+                _forYouMode
+                    ? (_aiRankingActive
+                        ? 'AI-ranked for you'
+                        : 'Recommended for you')
+                    : 'All jobs',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -470,6 +664,7 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
                               job: job,
                               userSkillNames: _userSkillNames,
                               userYearsExperience: _userYearsExperience,
+                              profile: _matchContext,
                             );
                             return GestureDetector(
                               onTap: () async {

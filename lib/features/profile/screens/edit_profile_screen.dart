@@ -24,6 +24,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   bool _isOpenToWork = true;
   String? _profilePhotoUrl;
   bool _isUploadingPhoto = false;
+  String _preferredWorkModel = 'all';
+  String _preferredEmploymentType = 'all';
+  final _desiredMinSalaryController = TextEditingController();
+  final _desiredMaxSalaryController = TextEditingController();
 
   @override
   void initState() {
@@ -39,12 +43,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _bioController.dispose();
     _jobTitleController.dispose();
     _yearsOfExperienceController.dispose();
+    _desiredMinSalaryController.dispose();
+    _desiredMaxSalaryController.dispose();
     super.dispose();
   }
 
   Future<void> _loadProfile() async {
     try {
-      final userId = Supabase.instance.client.auth.currentUser!.id;
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (userId == null) {
+        debugPrint('No user ID available for loading profile');
+        return;
+      }
       final profile = await SupabaseService.getProfile(userId);
       if (profile != null) {
         _fullNameController.text = profile['full_name'] ?? '';
@@ -57,6 +67,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         setState(() {
           _isOpenToWork = profile['is_open_to_work'] ?? true;
           _profilePhotoUrl = profile['profile_photo_url'];
+          _preferredWorkModel =
+              profile['preferred_work_model'] as String? ?? 'all';
+          _preferredEmploymentType =
+              profile['preferred_employment_type'] as String? ?? 'all';
+          _desiredMinSalaryController.text =
+              profile['desired_min_salary']?.toString() ?? '';
+          _desiredMaxSalaryController.text =
+              profile['desired_max_salary']?.toString() ?? '';
         });
       }
     } catch (e) {
@@ -169,7 +187,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       if (mounted) {
         final raw = e.toString();
         final lower = raw.toLowerCase();
-        final isRls = lower.contains('row-level security') ||
+        final isRls =
+            lower.contains('row-level security') ||
             lower.contains('unauthorized') ||
             lower.contains('403');
         final details = raw.length > 180 ? '${raw.substring(0, 180)}…' : raw;
@@ -192,7 +211,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final userId = Supabase.instance.client.auth.currentUser!.id;
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (userId == null) {
+        if (mounted) {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Please sign in to save your profile'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+        return;
+      }
       await SupabaseService.updateProfile(userId, {
         'full_name': _fullNameController.text.trim(),
         'phone_number': _phoneController.text.trim(),
@@ -203,6 +234,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           _yearsOfExperienceController.text.trim(),
         ),
         'is_open_to_work': _isOpenToWork,
+        'preferred_work_model': _preferredWorkModel,
+        'preferred_employment_type': _preferredEmploymentType,
+        'desired_min_salary':
+            int.tryParse(_desiredMinSalaryController.text.trim()),
+        'desired_max_salary':
+            int.tryParse(_desiredMaxSalaryController.text.trim()),
         'updated_at': DateTime.now().toIso8601String(),
       });
 
@@ -500,7 +537,86 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         alignLabelWithHint: true,
                       ),
                     ),
-                    const SizedBox(height: 32),
+                    const SizedBox(height: 24),
+
+                    const _SectionLabel(label: 'Job Preferences'),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Preferred work model',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: colorScheme.onSurface.withValues(alpha: 0.6),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        for (final option in ['all', 'remote', 'hybrid', 'on-site'])
+                          ChoiceChip(
+                            label: Text(option == 'all' ? 'Any' : option),
+                            selected: _preferredWorkModel == option,
+                            onSelected: (_) =>
+                                setState(() => _preferredWorkModel = option),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Preferred employment type',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: colorScheme.onSurface.withValues(alpha: 0.6),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        for (final option in ['all', 'full-time', 'contract'])
+                          ChoiceChip(
+                            label: Text(option == 'all' ? 'Any' : option),
+                            selected: _preferredEmploymentType == option,
+                            onSelected: (_) =>
+                                setState(() => _preferredEmploymentType = option),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextFormField(
+                            controller: _desiredMinSalaryController,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Min salary',
+                              prefixText: '\$ ',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextFormField(
+                            controller: _desiredMaxSalaryController,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Max salary',
+                              prefixText: '\$ ',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Used to improve your For You match scores',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colorScheme.onSurface.withValues(alpha: 0.5),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
 
                     ElevatedButton(
                       onPressed: _isLoading ? null : _saveProfile,

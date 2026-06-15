@@ -81,5 +81,9 @@
 		</array>
 		<key>UIStatusBarHidden</key>
 		<false/>
+		<key>NSLocalAuthenticationUsageDescription</key>
+		<string>We use biometric authentication to securely sign you into SmartJob</string>
+		<key>NSFaceIDUsageDescription</key>
+		<string>We use Face ID to securely sign you into SmartJob</string>
 	</dict>
 </plist>

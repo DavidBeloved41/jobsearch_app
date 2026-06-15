@@ -1,5 +1,7 @@
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/services/offline_cache_service.dart';
 import '../../../core/supabase/supabase_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/company_logo.dart';
@@ -15,6 +17,7 @@ class ApplicationsScreen extends StatefulWidget {
 class _ApplicationsScreenState extends State<ApplicationsScreen> {
   List<Map<String, dynamic>> _applications = [];
   bool _isLoading = true;
+  bool _isOffline = false;
 
   static const _columns = [
     _KanbanColumn(id: 'applied', label: 'Applied', color: AppColors.primary),
@@ -45,14 +48,30 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> {
 
     setState(() => _isLoading = true);
     try {
-      final applications = await SupabaseService.getApplications(userId);
+      final online = await Connectivity().checkConnectivity();
+      final hasNetwork = !online.contains(ConnectivityResult.none);
+
+      if (hasNetwork) {
+        final applications = await SupabaseService.getApplications(userId);
+        await OfflineCacheService.cacheApplications(userId, applications);
+        setState(() {
+          _applications = applications;
+          _isOffline = false;
+          _isLoading = false;
+        });
+      } else {
+        throw Exception('offline');
+      }
+    } catch (e) {
+      final cached = await OfflineCacheService.getCachedApplications(userId);
       setState(() {
-        _applications = applications;
+        _applications = cached ?? [];
+        _isOffline = cached != null;
         _isLoading = false;
       });
-    } catch (e) {
-      setState(() => _isLoading = false);
-      debugPrint('Error loading applications: $e');
+      if (cached == null) {
+        debugPrint('Error loading applications: $e');
+      }
     }
   }
 
@@ -199,21 +218,39 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> {
                 )
               : RefreshIndicator(
                   onRefresh: _loadApplications,
-                  child: SizedBox(
-                    height: MediaQuery.of(context).size.height * 0.72,
-                    child: ListView(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.all(12),
-                      children: _columns.map((col) {
-                        final items = _forStatus(col.id);
-                        return _KanbanBoardColumn(
-                          column: col,
-                          items: items,
-                          onTapCard: _openJobDetail,
-                          onMoveCard: _showMoveMenu,
-                        );
-                      }).toList(),
-                    ),
+                  child: Column(
+                    children: [
+                      if (_isOffline)
+                        Container(
+                          width: double.infinity,
+                          margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: AppColors.warning.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text(
+                            'Offline — showing cached applications',
+                            style: TextStyle(fontSize: 13),
+                          ),
+                        ),
+                      SizedBox(
+                        height: MediaQuery.of(context).size.height * 0.72,
+                        child: ListView(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.all(12),
+                          children: _columns.map((col) {
+                            final items = _forStatus(col.id);
+                            return _KanbanBoardColumn(
+                              column: col,
+                              items: items,
+                              onTapCard: _openJobDetail,
+                              onMoveCard: _showMoveMenu,
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
     );

@@ -3,6 +3,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/match_score_service.dart';
+import '../models/match_profile_context.dart';
 import '../supabase/supabase_service.dart';
 
 class NotificationService {
@@ -25,8 +26,10 @@ class NotificationService {
 
     await _plugin.initialize(settings);
 
-    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
+    final androidPlugin = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
     await androidPlugin?.requestNotificationsPermission();
 
     _initialized = true;
@@ -36,19 +39,21 @@ class NotificationService {
     required List<Map<String, dynamic>> jobs,
     required List<String> userSkillNames,
     int? userYearsExperience,
+    MatchProfileContext? profile,
   }) async {
     await initialize();
 
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return;
 
-    final profile = await SupabaseService.getProfile(user.id);
-    if (profile?['notify_job_alerts'] == false) return;
+    final userProfile = await SupabaseService.getProfile(user.id);
+    if (userProfile?['notify_job_alerts'] == false) return;
+
+    final matchContext = profile ??
+        MatchProfileContext.fromProfile(userProfile, userSkillNames);
 
     final box = await Hive.openBox(_notifiedJobsBox);
-    final notified = <String>{
-      ...box.keys.map((k) => k.toString()),
-    };
+    final notified = <String>{...box.keys.map((k) => k.toString())};
 
     var sentThisSession = 0;
     const maxPerSession = 3;
@@ -63,6 +68,7 @@ class NotificationService {
         job: job,
         userSkillNames: userSkillNames,
         userYearsExperience: userYearsExperience,
+        profile: matchContext,
       );
 
       if (score < _highMatchThreshold) continue;
@@ -91,13 +97,19 @@ class NotificationService {
     String jobId,
   ) async {
     try {
+      // FIX: Check if profile exists before inserting notification
+      // This prevents FK constraint violation: "notifications_user_id_fkey"
+      final profile = await SupabaseService.getProfile(userId);
+      if (profile == null) {
+        debugPrint('NotificationService: Profile not found for user $userId');
+        return;
+      }
+
       await Supabase.instance.client.from('notifications').insert({
         'user_id': userId,
         'type': 'job_match',
         'title': 'High match · $score%',
-        'body': company.isNotEmpty
-            ? '$jobTitle at $company'
-            : jobTitle,
+        'body': company.isNotEmpty ? '$jobTitle at $company' : jobTitle,
         'data': {'job_id': jobId, 'match_score': score},
         'is_read': false,
       });

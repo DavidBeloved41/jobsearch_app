@@ -18,6 +18,8 @@ class JobFilters {
   });
 
   bool get hasAdvancedFilters =>
+      workModel != 'all' ||
+      employmentType != 'all' ||
       minSalary != null ||
       maxSalary != null ||
       location.isNotEmpty ||
@@ -26,6 +28,8 @@ class JobFilters {
 
   int get activeCount {
     var n = 0;
+    if (workModel != 'all') n++;
+    if (employmentType != 'all') n++;
     if (minSalary != null || maxSalary != null) n++;
     if (location.isNotEmpty) n++;
     if (industry.isNotEmpty) n++;

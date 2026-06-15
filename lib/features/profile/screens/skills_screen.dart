@@ -23,7 +23,12 @@ class _SkillsScreenState extends State<SkillsScreen> {
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     try {
-      final userId = Supabase.instance.client.auth.currentUser!.id;
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (userId == null) {
+        setState(() => _isLoading = false);
+        debugPrint('No user ID available for loading skills');
+        return;
+      }
 
       final allSkills = await Supabase.instance.client
           .from('skills')
@@ -46,10 +51,20 @@ class _SkillsScreenState extends State<SkillsScreen> {
     }
   }
 
-  Future<void> _addSkill(
-      Map<String, dynamic> skill, String proficiency) async {
+  Future<void> _addSkill(Map<String, dynamic> skill, String proficiency) async {
     try {
-      final userId = Supabase.instance.client.auth.currentUser!.id;
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (userId == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Please sign in to add skills'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+        return;
+      }
       await Supabase.instance.client.from('profile_skills').insert({
         'user_id': userId,
         'skill_id': skill['id'],
@@ -76,8 +91,7 @@ class _SkillsScreenState extends State<SkillsScreen> {
     }
   }
 
-  Future<void> _deleteSkill(
-      String profileSkillId, String skillName) async {
+  Future<void> _deleteSkill(String profileSkillId, String skillName) async {
     try {
       await Supabase.instance.client
           .from('profile_skills')
@@ -101,10 +115,12 @@ class _SkillsScreenState extends State<SkillsScreen> {
     String? selectedSkillId;
     String selectedProficiency = 'intermediate';
 
-    final addedSkillIds =
-        _userSkills.map((s) => s['skill_id'] as String).toSet();
-    final availableSkills =
-        _allSkills.where((s) => !addedSkillIds.contains(s['id'])).toList();
+    final addedSkillIds = _userSkills
+        .map((s) => s['skill_id'] as String)
+        .toSet();
+    final availableSkills = _allSkills
+        .where((s) => !addedSkillIds.contains(s['id']))
+        .toList();
 
     if (availableSkills.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -185,43 +201,43 @@ class _SkillsScreenState extends State<SkillsScreen> {
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
-                    children: [
-                      'beginner',
-                      'intermediate',
-                      'advanced',
-                      'expert'
-                    ].map((level) {
-                      final isSelected = selectedProficiency == level;
-                      return GestureDetector(
-                        onTap: () => setModalState(
-                            () => selectedProficiency = level),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? AppColors.primary
-                                : AppColors.bg(context),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: isSelected
-                                  ? AppColors.primary
-                                  : AppColors.bord(context),
+                    children: ['beginner', 'intermediate', 'advanced', 'expert']
+                        .map((level) {
+                          final isSelected = selectedProficiency == level;
+                          return GestureDetector(
+                            onTap: () => setModalState(
+                              () => selectedProficiency = level,
                             ),
-                          ),
-                          child: Text(
-                            level[0].toUpperCase() + level.substring(1),
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: isSelected
-                                  ? Colors.white
-                                  : AppColors.textSec(context),
-                              fontWeight: FontWeight.w500,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? AppColors.primary
+                                    : AppColors.bg(context),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: isSelected
+                                      ? AppColors.primary
+                                      : AppColors.bord(context),
+                                ),
+                              ),
+                              child: Text(
+                                level[0].toUpperCase() + level.substring(1),
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: isSelected
+                                      ? Colors.white
+                                      : AppColors.textSec(context),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
                             ),
-                          ),
-                        ),
-                      );
-                    }).toList(),
+                          );
+                        })
+                        .toList(),
                   ),
                   const SizedBox(height: 24),
 
@@ -230,7 +246,8 @@ class _SkillsScreenState extends State<SkillsScreen> {
                         ? null
                         : () {
                             final skill = availableSkills.firstWhere(
-                                (s) => s['id'] == selectedSkillId);
+                              (s) => s['id'] == selectedSkillId,
+                            );
                             Navigator.pop(context);
                             _addSkill(skill, selectedProficiency);
                           },
@@ -280,137 +297,132 @@ class _SkillsScreenState extends State<SkillsScreen> {
               ),
             )
           : _userSkills.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.psychology_outlined,
-                        size: 64,
-                        color: AppColors.textSec(context),
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'No skills added yet',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.text(context),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Add your skills to improve job matches',
-                        style: TextStyle(
-                          color: AppColors.textSec(context),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      ElevatedButton.icon(
-                        onPressed: _showAddSkillDialog,
-                        icon: const Icon(Icons.add),
-                        label: const Text('Add Skill'),
-                      ),
-                    ],
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.psychology_outlined,
+                    size: 64,
+                    color: AppColors.textSec(context),
                   ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _userSkills.length,
-                  itemBuilder: (context, index) {
-                    final item = _userSkills[index];
-                    final skill =
-                        item['skills'] as Map<String, dynamic>?;
-                    final proficiency =
-                        item['proficiency_level'] as String?;
-                    final color = _getProficiencyColor(proficiency);
+                  const SizedBox(height: 16),
+                  Text(
+                    'No skills added yet',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.text(context),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Add your skills to improve job matches',
+                    style: TextStyle(color: AppColors.textSec(context)),
+                  ),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: _showAddSkillDialog,
+                    icon: const Icon(Icons.add),
+                    label: const Text('Add Skill'),
+                  ),
+                ],
+              ),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: _userSkills.length,
+              itemBuilder: (context, index) {
+                final item = _userSkills[index];
+                final skill = item['skills'] as Map<String, dynamic>?;
+                final proficiency = item['proficiency_level'] as String?;
+                final color = _getProficiencyColor(proficiency);
 
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: AppColors.surf(context),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: AppColors.bord(context)),
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.surf(context),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: AppColors.bord(context)),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(Icons.code, color: color, size: 24),
                       ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 44,
-                            height: 44,
-                            decoration: BoxDecoration(
-                              color: color.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(12),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              skill?['name'] ?? '',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.text(context),
+                              ),
                             ),
-                            child: Icon(Icons.code, color: color, size: 24),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            const SizedBox(height: 4),
+                            Row(
                               children: [
-                                Text(
-                                  skill?['name'] ?? '',
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.text(context),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: color.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Text(
+                                    proficiency != null
+                                        ? proficiency[0].toUpperCase() +
+                                              proficiency.substring(1)
+                                        : '',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: color,
+                                      fontWeight: FontWeight.w500,
+                                    ),
                                   ),
                                 ),
-                                const SizedBox(height: 4),
-                                Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 8, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color:
-                                            color.withValues(alpha: 0.1),
-                                        borderRadius:
-                                            BorderRadius.circular(10),
-                                      ),
-                                      child: Text(
-                                        proficiency != null
-                                            ? proficiency[0]
-                                                    .toUpperCase() +
-                                                proficiency.substring(1)
-                                            : '',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: color,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      skill?['category'] ?? '',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: AppColors.textSec(context),
-                                      ),
-                                    ),
-                                  ],
+                                const SizedBox(width: 8),
+                                Text(
+                                  skill?['category'] ?? '',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.textSec(context),
+                                  ),
                                 ),
                               ],
                             ),
-                          ),
-                          IconButton(
-                            icon: const Icon(
-                              Icons.delete_outline,
-                              color: AppColors.error,
-                              size: 20,
-                            ),
-                            onPressed: () => _deleteSkill(
-                              item['id'] as String,
-                              skill?['name'] ?? '',
-                            ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    );
-                  },
-                ),
+                      IconButton(
+                        icon: const Icon(
+                          Icons.delete_outline,
+                          color: AppColors.error,
+                          size: 20,
+                        ),
+                        onPressed: () => _deleteSkill(
+                          item['id'] as String,
+                          skill?['name'] ?? '',
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
     );
   }
 }

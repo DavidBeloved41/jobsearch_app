@@ -186,20 +186,28 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     debugPrint('Saving biometric credentials for $email');
                     await BiometricService.saveCredentials(email, password);
                     if (!mounted) return;
-                    Navigator.pop(context);
-                    setState(() => _biometricEnabled = true);
+                    Navigator.pop(sheetContext);
+                    if (mounted) {
+                      setState(() => _biometricEnabled = true);
+                    }
                     debugPrint('Biometric setup successful');
-                    GoRouter.of(context).go(AppRoutes.home);
+                    if (mounted) {
+                      GoRouter.of(context).go(AppRoutes.home);
+                    }
                   } catch (e) {
                     debugPrint('Error saving biometric credentials: $e');
                     if (!mounted) return;
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Failed to set up $_biometricLabel: $e'),
-                        backgroundColor: AppColors.error,
-                      ),
-                    );
+                    Navigator.pop(sheetContext);
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Failed to set up $_biometricLabel: $e',
+                          ),
+                          backgroundColor: AppColors.error,
+                        ),
+                      );
+                    }
                   }
                 },
                 child: Text('Enable $_biometricLabel'),

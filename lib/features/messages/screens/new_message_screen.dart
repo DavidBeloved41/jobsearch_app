@@ -16,6 +16,7 @@ class _NewMessageScreenState extends State<NewMessageScreen> {
   List<Map<String, dynamic>> _results = [];
   bool _isLoading = false;
   String? _error;
+  bool _recruitersOnly = false;
 
   @override
   void dispose() {
@@ -39,7 +40,9 @@ class _NewMessageScreenState extends State<NewMessageScreen> {
     });
 
     try {
-      final results = await SupabaseService.searchProfiles(trimmed);
+      final results = _recruitersOnly
+          ? await SupabaseService.searchRecruiters(trimmed)
+          : await SupabaseService.searchProfiles(trimmed);
       if (mounted) {
         setState(() {
           _results = results;
@@ -68,6 +71,7 @@ class _NewMessageScreenState extends State<NewMessageScreen> {
           receiverId: id,
           receiverName: name,
           receiverRole: role,
+          isRecruiter: SupabaseService.isRecruiterProfile(profile),
         ),
       ),
     );
@@ -83,15 +87,34 @@ class _NewMessageScreenState extends State<NewMessageScreen> {
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(value: false, label: Text('Everyone')),
+                ButtonSegment(value: true, label: Text('Recruiters')),
+              ],
+              selected: {_recruitersOnly},
+              onSelectionChanged: (s) {
+                setState(() => _recruitersOnly = s.first);
+                if (_searchController.text.trim().length >= 2) {
+                  _search(_searchController.text);
+                }
+              },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             child: TextField(
               controller: _searchController,
               autofocus: true,
               style: TextStyle(color: AppColors.text(context)),
               decoration: InputDecoration(
-                hintText: 'Search by name...',
+                hintText: _recruitersOnly
+                    ? 'Search recruiters by name...'
+                    : 'Search by name...',
                 hintStyle: TextStyle(color: AppColors.textSec(context)),
-                prefixIcon: Icon(Icons.search, color: AppColors.textSec(context)),
+                prefixIcon:
+                    Icon(Icons.search, color: AppColors.textSec(context)),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide(color: AppColors.bord(context)),
@@ -102,7 +125,7 @@ class _NewMessageScreenState extends State<NewMessageScreen> {
           ),
           if (_error != null)
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Text(_error!, style: const TextStyle(color: AppColors.error)),
             ),
           Expanded(
@@ -113,15 +136,19 @@ class _NewMessageScreenState extends State<NewMessageScreen> {
                 : _searchController.text.trim().length < 2
                     ? Center(
                         child: Text(
-                          'Type at least 2 characters to search',
+                          _recruitersOnly
+                              ? 'Find verified recruiters to ask about roles'
+                              : 'Type at least 2 characters to search',
                           style: TextStyle(color: AppColors.textSec(context)),
+                          textAlign: TextAlign.center,
                         ),
                       )
                     : _results.isEmpty
                         ? Center(
                             child: Text(
                               'No users found',
-                              style: TextStyle(color: AppColors.textSec(context)),
+                              style:
+                                  TextStyle(color: AppColors.textSec(context)),
                             ),
                           )
                         : ListView.builder(
@@ -129,26 +156,64 @@ class _NewMessageScreenState extends State<NewMessageScreen> {
                             itemBuilder: (context, index) {
                               final profile = _results[index];
                               final id = profile['id'] as String? ?? '';
-                              if (id == currentUserId) return const SizedBox.shrink();
+                              if (id == currentUserId) {
+                                return const SizedBox.shrink();
+                              }
+
+                              final isRecruiter =
+                                  SupabaseService.isRecruiterProfile(profile);
 
                               return ListTile(
                                 leading: CircleAvatar(
                                   backgroundColor:
                                       AppColors.primary.withValues(alpha: 0.1),
-                                  child: const Icon(
-                                    Icons.person,
+                                  child: Icon(
+                                    isRecruiter
+                                        ? Icons.badge_outlined
+                                        : Icons.person,
                                     color: AppColors.primary,
                                   ),
                                 ),
-                                title: Text(
-                                  profile['full_name'] as String? ?? 'Unknown',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w500,
-                                    color: AppColors.text(context),
-                                  ),
+                                title: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        profile['full_name'] as String? ??
+                                            'Unknown',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w500,
+                                          color: AppColors.text(context),
+                                        ),
+                                      ),
+                                    ),
+                                    if (isRecruiter)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.primary
+                                              .withValues(alpha: 0.1),
+                                          borderRadius:
+                                              BorderRadius.circular(6),
+                                        ),
+                                        child: const Text(
+                                          'Recruiter',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w600,
+                                            color: AppColors.primary,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
                                 ),
                                 subtitle: Text(
-                                  profile['headline'] as String? ?? '',
+                                  [
+                                    profile['headline'] as String? ?? '',
+                                    profile['company_name'] as String? ?? '',
+                                  ].where((s) => s.isNotEmpty).join(' · '),
                                   style: TextStyle(
                                     color: AppColors.textSec(context),
                                   ),

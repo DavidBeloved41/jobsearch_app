@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme/app_colors.dart';
+import 'career_advice_screen.dart';
 
 class HelpScreen extends StatefulWidget {
   const HelpScreen({super.key});
@@ -274,6 +275,49 @@ class _HelpScreenState extends State<HelpScreen> {
                     ),
                   );
                 },
+              ),
+            ),
+            const SizedBox(height: 24),
+
+            Text(
+              'Career Resources',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: AppColors.text(context),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              decoration: BoxDecoration(
+                color: AppColors.surf(context),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.bord(context)),
+              ),
+              child: ListTile(
+                leading: const Icon(Icons.menu_book_outlined,
+                    color: AppColors.primary),
+                title: Text(
+                  'Career advice library',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.text(context),
+                  ),
+                ),
+                subtitle: Text(
+                  'Articles on salary, interviews, branding & more',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textSec(context),
+                  ),
+                ),
+                trailing:
+                    Icon(Icons.chevron_right, color: AppColors.textSec(context)),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const CareerAdviceScreen(),
+                  ),
+                ),
               ),
             ),
             const SizedBox(height: 24),

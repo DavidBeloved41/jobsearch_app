@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/data/resume_templates.dart';
+import '../../../core/services/ai_service.dart';
+import '../../../core/services/cloud_document_service.dart';
 import '../../../core/services/offline_cache_service.dart';
 import '../../../core/supabase/supabase_service.dart';
 import '../../../core/theme/app_colors.dart';
@@ -17,6 +20,7 @@ class _ResumeScreenState extends State<ResumeScreen> {
   String? _resumeName;
   String? _uploadDate;
   bool _isUploading = false;
+  bool _isGenerating = false;
   final _draftController = TextEditingController();
   bool _draftLoaded = false;
 
@@ -55,7 +59,11 @@ class _ResumeScreenState extends State<ResumeScreen> {
 
   Future<void> _loadExistingResume() async {
     try {
-      final userId = Supabase.instance.client.auth.currentUser!.id;
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (userId == null) {
+        debugPrint('No user ID available for loading resume');
+        return;
+      }
       final profile = await SupabaseService.getProfile(userId);
       if (profile != null && profile['resume_url'] != null) {
         setState(() {
@@ -66,6 +74,142 @@ class _ResumeScreenState extends State<ResumeScreen> {
       }
     } catch (e) {
       debugPrint('Error loading resume: $e');
+    }
+  }
+
+  Future<void> _generateAiResume() async {
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) return;
+
+    setState(() => _isGenerating = true);
+    try {
+      final profile = await SupabaseService.getProfile(userId);
+      final skills = await SupabaseService.getUserSkillNames(userId);
+      final draft = await AiService.generateResumeDraft(
+        profile: profile,
+        skills: skills,
+        targetRole: profile?['job_title'] as String?,
+      );
+      if (draft != null && mounted) {
+        _draftController.text = draft;
+        await _saveDraft();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              AiService.isConfigured
+                  ? 'AI resume draft generated'
+                  : 'Add OPENAI_API_KEY to .env for AI generation',
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isGenerating = false);
+    }
+  }
+
+  Future<void> _importFromCloud(CloudSource source) async {
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) return;
+
+    setState(() => _isUploading = true);
+    try {
+      final picked = await CloudDocumentService.pickFromCloudPicker(source);
+      if (picked == null) {
+        setState(() => _isUploading = false);
+        return;
+      }
+      await CloudDocumentService.uploadResumeBytes(
+        userId: userId,
+        bytes: picked.bytes,
+        fileName: picked.fileName,
+        source: picked.source,
+      );
+      setState(() {
+        _hasResume = true;
+        _resumeName = picked.fileName;
+        _uploadDate = CloudDocumentService.labelFor(source);
+        _isUploading = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Imported from ${CloudDocumentService.labelFor(source)}',
+            ),
+            backgroundColor: AppColors.success,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() => _isUploading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Import failed: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _importFromShareLink() async {
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) return;
+
+    final controller = TextEditingController();
+    final url = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Import from link'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            hintText: 'Paste Google Drive or Dropbox share link',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('Import'),
+          ),
+        ],
+      ),
+    );
+    if (url == null || url.trim().isEmpty) return;
+
+    setState(() => _isUploading = true);
+    try {
+      final file = await CloudDocumentService.importFromShareUrl(url.trim());
+      if (file == null) throw Exception('Could not download file');
+
+      final source = url.contains('dropbox')
+          ? CloudSource.dropbox
+          : CloudSource.googleDrive;
+
+      await CloudDocumentService.uploadResumeBytes(
+        userId: userId,
+        bytes: file.bytes,
+        fileName: file.fileName,
+        source: source,
+      );
+      setState(() {
+        _hasResume = true;
+        _resumeName = file.fileName;
+        _uploadDate = 'Cloud link';
+        _isUploading = false;
+      });
+    } catch (e) {
+      setState(() => _isUploading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Link import failed: $e')),
+        );
+      }
     }
   }
 
@@ -95,7 +239,19 @@ class _ResumeScreenState extends State<ResumeScreen> {
 
       setState(() => _isUploading = true);
 
-      final userId = Supabase.instance.client.auth.currentUser!.id;
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (userId == null) {
+        if (mounted) {
+          setState(() => _isUploading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Please sign in to upload a resume'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+        return;
+      }
       final fileName = '$userId/resume.${file.extension}';
 
       debugPrint('Uploading resume to resumes bucket: $fileName');
@@ -139,7 +295,8 @@ class _ResumeScreenState extends State<ResumeScreen> {
       if (mounted) {
         final raw = e.toString();
         final lower = raw.toLowerCase();
-        final isRls = lower.contains('row-level security') ||
+        final isRls =
+            lower.contains('row-level security') ||
             lower.contains('unauthorized') ||
             lower.contains('403');
         final details = raw.length > 180 ? '${raw.substring(0, 180)}…' : raw;
@@ -177,7 +334,16 @@ class _ResumeScreenState extends State<ResumeScreen> {
 
   Future<void> _deleteResume() async {
     try {
-      final userId = Supabase.instance.client.auth.currentUser!.id;
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (userId == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please sign in to delete your resume'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+        return;
+      }
       await SupabaseService.updateProfile(userId, {
         'resume_url': null,
         'updated_at': DateTime.now().toIso8601String(),
@@ -342,6 +508,192 @@ class _ResumeScreenState extends State<ResumeScreen> {
                         ),
                       ],
                     ),
+            ),
+            const SizedBox(height: 20),
+
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.surf(context),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.bord(context)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Cloud document sync',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.text(context),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Import resumes from cloud storage or share links',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textSec(context),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      ActionChip(
+                        avatar: const Icon(Icons.cloud_outlined, size: 18),
+                        label: const Text('Google Drive'),
+                        onPressed: _isUploading
+                            ? null
+                            : () => _importFromCloud(CloudSource.googleDrive),
+                      ),
+                      ActionChip(
+                        avatar: const Icon(Icons.cloud_outlined, size: 18),
+                        label: const Text('Dropbox'),
+                        onPressed: _isUploading
+                            ? null
+                            : () => _importFromCloud(CloudSource.dropbox),
+                      ),
+                      ActionChip(
+                        avatar: const Icon(Icons.cloud_outlined, size: 18),
+                        label: const Text('iCloud'),
+                        onPressed: _isUploading
+                            ? null
+                            : () => _importFromCloud(CloudSource.iCloud),
+                      ),
+                      ActionChip(
+                        avatar: const Icon(Icons.link, size: 18),
+                        label: const Text('Paste link'),
+                        onPressed: _isUploading ? null : _importFromShareLink,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _isGenerating ? null : _generateAiResume,
+                icon: _isGenerating
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.auto_awesome),
+                label: Text(
+                  _isGenerating ? 'Generating...' : 'AI generate resume draft',
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.surf(context),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.bord(context)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Resume templates',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.text(context),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Apply a professional template to your draft',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textSec(context),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ...ResumeTemplates.templates.map((template) {
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        template.name,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.text(context),
+                        ),
+                      ),
+                      subtitle: Text(
+                        template.description,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSec(context),
+                        ),
+                      ),
+                      trailing: TextButton(
+                        onPressed: () {
+                          _draftController.text = template.content;
+                          _saveDraft();
+                        },
+                        child: const Text('Use'),
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.surf(context),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.bord(context)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Cover letter templates',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.text(context),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: ResumeTemplates.coverLetters.map((template) {
+                      return ActionChip(
+                        label: Text(template.name),
+                        onPressed: () {
+                          _draftController.text = template.content;
+                          _saveDraft();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('${template.name} template applied'),
+                              duration: const Duration(seconds: 1),
+                            ),
+                          );
+                        },
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 20),
 

@@ -1,5 +1,8 @@
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/services/offline_cache_service.dart';
+import '../../../core/supabase/supabase_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/date_formatter.dart';
 import 'chat_screen.dart';
@@ -17,6 +20,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
       Supabase.instance.client.auth.currentUser?.id ?? '';
   List<Map<String, dynamic>> _conversations = [];
   bool _isLoading = true;
+  bool _isOffline = false;
 
   @override
   void initState() {
@@ -34,6 +38,10 @@ class _MessagesScreenState extends State<MessagesScreen> {
     }
 
     try {
+      final online = await Connectivity().checkConnectivity();
+      final hasNetwork = !online.contains(ConnectivityResult.none);
+      if (!hasNetwork) throw Exception('offline');
+
       final response = await Supabase.instance.client
           .from('messages')
           .select('sender_id, receiver_id, content, created_at, is_read')
@@ -77,7 +85,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
       if (partnerIds.isNotEmpty) {
         final profilesResponse = await Supabase.instance.client
             .from('profiles')
-            .select('id, full_name, headline')
+            .select(
+              'id, full_name, headline, account_type, company_name',
+            )
             .inFilter('id', partnerIds.toList());
 
         final profiles = List<Map<String, dynamic>>.from(profilesResponse);
@@ -89,6 +99,9 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
           conversation['name'] = profile['full_name'] as String? ?? 'Unknown';
           conversation['role'] = profile['headline'] as String? ?? '';
+          conversation['is_recruiter'] =
+              SupabaseService.isRecruiterProfile(profile);
+          conversation['company'] = profile['company_name'] as String? ?? '';
         }
       }
 
@@ -102,11 +115,19 @@ class _MessagesScreenState extends State<MessagesScreen> {
       setState(() {
         _conversations = conversations;
         _isLoading = false;
+        _isOffline = false;
       });
+      await OfflineCacheService.cacheConversations(
+        _currentUserId,
+        conversations,
+      );
     } catch (e) {
       debugPrint('Error loading conversations: $e');
+      final cached =
+          await OfflineCacheService.getCachedConversations(_currentUserId);
       setState(() {
-        _conversations = [];
+        _conversations = cached ?? [];
+        _isOffline = cached != null;
         _isLoading = false;
       });
     }
@@ -153,187 +174,257 @@ class _MessagesScreenState extends State<MessagesScreen> {
                     style: TextStyle(color: AppColors.textSec(context)),
                   ),
                 )
-              : _conversations.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            'No conversations yet.',
-                            style: TextStyle(
-                              color: AppColors.textSec(context),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          ElevatedButton.icon(
-                            onPressed: _openNewMessage,
-                            icon: const Icon(Icons.edit_outlined),
-                            label: const Text('Start a conversation'),
-                          ),
-                        ],
+              : Column(
+                  children: [
+                    if (_isOffline)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(10),
+                        color: AppColors.warning.withValues(alpha: 0.12),
+                        child: const Text(
+                          'Offline — showing cached conversations',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 13),
+                        ),
                       ),
-                    )
-                  : RefreshIndicator(
-                      onRefresh: _loadConversations,
-                      child: ListView.builder(
-                        itemCount: _conversations.length,
-                        itemBuilder: (context, index) {
-                          final chat = _conversations[index];
-                          final bool hasUnread = (chat['unread'] as int) > 0;
-
-                          return InkWell(
-                            onTap: () async {
-                              await Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (_) => ChatScreen(
-                                    receiverId: chat['id'] as String,
-                                    receiverName: chat['name'] as String,
-                                    receiverRole: chat['role'] as String,
-                                  ),
-                                ),
-                              );
-                              _loadConversations();
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
-                              ),
-                              decoration: BoxDecoration(
-                                color: hasUnread
-                                    ? AppColors.primary
-                                        .withValues(alpha: 0.05)
-                                    : AppColors.surf(context),
-                                border: Border(
-                                  bottom: BorderSide(
-                                    color: AppColors.bord(context),
-                                  ),
-                                ),
-                              ),
-                              child: Row(
+                    Expanded(
+                      child: _conversations.isEmpty
+                          ? Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  Container(
-                                    width: 52,
-                                    height: 52,
-                                    decoration: BoxDecoration(
-                                      color: AppColors.primary
-                                          .withValues(alpha: 0.1),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Icon(
-                                      Icons.person,
-                                      color: AppColors.primary,
-                                      size: 28,
+                                  Text(
+                                    'No conversations yet.',
+                                    style: TextStyle(
+                                      color: AppColors.textSec(context),
                                     ),
                                   ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            Text(
-                                              chat['name'] as String,
-                                              style: TextStyle(
-                                                fontSize: 15,
-                                                fontWeight: hasUnread
-                                                    ? FontWeight.w600
-                                                    : FontWeight.w500,
-                                                color: AppColors.text(context),
-                                              ),
-                                            ),
-                                            Text(
-                                              chat['time'] as String,
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color: hasUnread
-                                                    ? AppColors.primary
-                                                    : AppColors.textSec(
-                                                        context,
-                                                      ),
-                                                fontWeight: hasUnread
-                                                    ? FontWeight.w600
-                                                    : FontWeight.normal,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 4),
-                                        if ((chat['role'] as String)
-                                            .isNotEmpty)
-                                          Text(
-                                            chat['role'] as String,
-                                            style: const TextStyle(
-                                              fontSize: 12,
-                                              color: AppColors.primary,
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                          ),
-                                        const SizedBox(height: 4),
-                                        Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            Expanded(
-                                              child: Text(
-                                                chat['message'] as String,
-                                                style: TextStyle(
-                                                  fontSize: 13,
-                                                  color: hasUnread
-                                                      ? AppColors.text(context)
-                                                      : AppColors.textSec(
-                                                          context,
-                                                        ),
-                                                  fontWeight: hasUnread
-                                                      ? FontWeight.w500
-                                                      : FontWeight.normal,
-                                                ),
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ),
-                                            if (hasUnread)
-                                              Container(
-                                                margin: const EdgeInsets.only(
-                                                  left: 8,
-                                                ),
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                  horizontal: 8,
-                                                  vertical: 2,
-                                                ),
-                                                decoration: BoxDecoration(
-                                                  color: AppColors.primary,
-                                                  borderRadius:
-                                                      BorderRadius.circular(
-                                                    20,
-                                                  ),
-                                                ),
-                                                child: Text(
-                                                  chat['unread'].toString(),
-                                                  style: const TextStyle(
-                                                    fontSize: 11,
-                                                    color: Colors.white,
-                                                    fontWeight: FontWeight.w600,
-                                                  ),
-                                                ),
-                                              ),
-                                          ],
-                                        ),
-                                      ],
-                                    ),
+                                  const SizedBox(height: 16),
+                                  ElevatedButton.icon(
+                                    onPressed: _openNewMessage,
+                                    icon: const Icon(Icons.edit_outlined),
+                                    label: const Text('Start a conversation'),
                                   ),
                                 ],
                               ),
+                            )
+                          : RefreshIndicator(
+                              onRefresh: _loadConversations,
+                              child: ListView.builder(
+                                itemCount: _conversations.length,
+                                itemBuilder: (context, index) {
+                                  final chat = _conversations[index];
+                                  final bool hasUnread =
+                                      (chat['unread'] as int) > 0;
+
+                                  return InkWell(
+                                    onTap: () async {
+                                      await Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                          builder: (_) => ChatScreen(
+                                            receiverId: chat['id'] as String,
+                                            receiverName:
+                                                chat['name'] as String,
+                                            receiverRole:
+                                                chat['role'] as String,
+                                            isRecruiter:
+                                                chat['is_recruiter']
+                                                        as bool? ??
+                                                    false,
+                                          ),
+                                        ),
+                                      );
+                                      _loadConversations();
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 12,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: hasUnread
+                                            ? AppColors.primary
+                                                .withValues(alpha: 0.05)
+                                            : AppColors.surf(context),
+                                        border: Border(
+                                          bottom: BorderSide(
+                                            color: AppColors.bord(context),
+                                          ),
+                                        ),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Container(
+                                            width: 52,
+                                            height: 52,
+                                            decoration: BoxDecoration(
+                                              color: AppColors.primary
+                                                  .withValues(alpha: 0.1),
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: const Icon(
+                                              Icons.person,
+                                              color: AppColors.primary,
+                                              size: 28,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Row(
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment
+                                                          .spaceBetween,
+                                                  children: [
+                                                    Text(
+                                                      chat['name'] as String,
+                                                      style: TextStyle(
+                                                        fontSize: 15,
+                                                        fontWeight: hasUnread
+                                                            ? FontWeight.w600
+                                                            : FontWeight.w500,
+                                                        color: AppColors.text(
+                                                            context),
+                                                      ),
+                                                    ),
+                                                    if (chat['is_recruiter'] ==
+                                                        true)
+                                                      Container(
+                                                        margin:
+                                                            const EdgeInsets
+                                                                .only(left: 6),
+                                                        padding:
+                                                            const EdgeInsets
+                                                                .symmetric(
+                                                          horizontal: 6,
+                                                          vertical: 2,
+                                                        ),
+                                                        decoration:
+                                                            BoxDecoration(
+                                                          color: AppColors
+                                                              .primary
+                                                              .withValues(
+                                                                  alpha: 0.1),
+                                                          borderRadius:
+                                                              BorderRadius
+                                                                  .circular(6),
+                                                        ),
+                                                        child: const Text(
+                                                          'Recruiter',
+                                                          style: TextStyle(
+                                                            fontSize: 10,
+                                                            fontWeight:
+                                                                FontWeight.w600,
+                                                            color: AppColors
+                                                                .primary,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    Text(
+                                                      chat['time'] as String,
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        color: hasUnread
+                                                            ? AppColors.primary
+                                                            : AppColors
+                                                                .textSec(
+                                                                    context),
+                                                        fontWeight: hasUnread
+                                                            ? FontWeight.w600
+                                                            : FontWeight.normal,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 4),
+                                                if ((chat['role'] as String)
+                                                    .isNotEmpty)
+                                                  Text(
+                                                    chat['role'] as String,
+                                                    style: const TextStyle(
+                                                      fontSize: 12,
+                                                      color: AppColors.primary,
+                                                      fontWeight:
+                                                          FontWeight.w500,
+                                                    ),
+                                                  ),
+                                                const SizedBox(height: 4),
+                                                Row(
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment
+                                                          .spaceBetween,
+                                                  children: [
+                                                    Expanded(
+                                                      child: Text(
+                                                        chat['message']
+                                                            as String,
+                                                        style: TextStyle(
+                                                          fontSize: 13,
+                                                          color: hasUnread
+                                                              ? AppColors.text(
+                                                                  context)
+                                                              : AppColors
+                                                                  .textSec(
+                                                                      context),
+                                                          fontWeight: hasUnread
+                                                              ? FontWeight.w500
+                                                              : FontWeight
+                                                                  .normal,
+                                                        ),
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                      ),
+                                                    ),
+                                                    if (hasUnread)
+                                                      Container(
+                                                        margin:
+                                                            const EdgeInsets
+                                                                .only(left: 8),
+                                                        padding:
+                                                            const EdgeInsets
+                                                                .symmetric(
+                                                          horizontal: 8,
+                                                          vertical: 2,
+                                                        ),
+                                                        decoration:
+                                                            BoxDecoration(
+                                                          color:
+                                                              AppColors.primary,
+                                                          borderRadius:
+                                                              BorderRadius
+                                                                  .circular(20),
+                                                        ),
+                                                        child: Text(
+                                                          chat['unread']
+                                                              .toString(),
+                                                          style:
+                                                              const TextStyle(
+                                                            fontSize: 11,
+                                                            color: Colors.white,
+                                                            fontWeight:
+                                                                FontWeight.w600,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                  ],
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
                             ),
-                          );
-                        },
-                      ),
                     ),
+                  ],
+                ),
     );
   }
 }

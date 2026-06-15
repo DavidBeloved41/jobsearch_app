@@ -1,5 +1,7 @@
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/services/offline_cache_service.dart';
 import '../../../core/supabase/supabase_service.dart';
 import '../../../core/theme/app_colors.dart';
 
@@ -7,12 +9,14 @@ class ChatScreen extends StatefulWidget {
   final String receiverId;
   final String receiverName;
   final String receiverRole;
+  final bool isRecruiter;
 
   const ChatScreen({
     super.key,
     required this.receiverId,
     required this.receiverName,
     required this.receiverRole,
+    this.isRecruiter = false,
   });
 
   @override
@@ -26,12 +30,26 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isLoading = true;
   bool _isSending = false;
   late final RealtimeChannel _channel;
-  final _currentUserId =
-      Supabase.instance.client.auth.currentUser!.id;
+  // FIX: Lazy initialize instead of field-level non-null assertion
+  late String _currentUserId;
 
   @override
   void initState() {
     super.initState();
+    _currentUserId = Supabase.instance.client.auth.currentUser?.id ?? '';
+    if (_currentUserId.isEmpty) {
+      debugPrint('Error: No user ID available for chat screen');
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please sign in to use messaging'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+      return;
+    }
     _loadMessages();
     _subscribeToMessages();
     SupabaseService.markMessagesAsRead(_currentUserId, widget.receiverId);
@@ -50,7 +68,9 @@ class _ChatScreenState extends State<ChatScreen> {
       final messages = await Supabase.instance.client
           .from('messages')
           .select()
-          .or('and(sender_id.eq.$_currentUserId,receiver_id.eq.${widget.receiverId}),and(sender_id.eq.${widget.receiverId},receiver_id.eq.$_currentUserId)')
+          .or(
+            'and(sender_id.eq.$_currentUserId,receiver_id.eq.${widget.receiverId}),and(sender_id.eq.${widget.receiverId},receiver_id.eq.$_currentUserId)',
+          )
           .order('created_at', ascending: true);
 
       setState(() {
@@ -93,11 +113,42 @@ class _ChatScreenState extends State<ChatScreen> {
     _messageController.clear();
 
     try {
-      await Supabase.instance.client.from('messages').insert({
-        'sender_id': _currentUserId,
-        'receiver_id': widget.receiverId,
-        'content': content,
-      });
+      final online = await Connectivity().checkConnectivity();
+      final hasNetwork = !online.contains(ConnectivityResult.none);
+
+      if (hasNetwork) {
+        await Supabase.instance.client.from('messages').insert({
+          'sender_id': _currentUserId,
+          'receiver_id': widget.receiverId,
+          'content': content,
+        });
+      } else {
+        await OfflineCacheService.queueMessage(
+          senderId: _currentUserId,
+          receiverId: widget.receiverId,
+          content: content,
+        );
+        if (mounted) {
+          setState(() {
+            _messages.add({
+              'sender_id': _currentUserId,
+              'receiver_id': widget.receiverId,
+              'content': content,
+              'created_at': DateTime.now().toIso8601String(),
+              'is_read': true,
+              '_pending': true,
+            });
+          });
+          _scrollToBottom();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Message queued — will send when online'),
+              backgroundColor: AppColors.warning,
+            ),
+          );
+        }
+        return;
+      }
     } catch (e) {
       debugPrint('Error sending message: $e');
       if (mounted) {
@@ -193,14 +244,48 @@ class _ChatScreenState extends State<ChatScreen> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              widget.receiverName,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    widget.receiverName,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (widget.isRecruiter ||
+                    widget.receiverRole.toLowerCase().contains('recruiter')) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Text(
+                      'Recruiter',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
             Text(
               widget.receiverRole,
               style: const TextStyle(
-                  fontSize: 12, color: AppColors.textSecondary),
+                fontSize: 12,
+                color: AppColors.textSecondary,
+              ),
             ),
           ],
         ),
@@ -217,119 +302,122 @@ class _ChatScreenState extends State<ChatScreen> {
           Expanded(
             child: _isLoading
                 ? const Center(
-                    child:
-                        CircularProgressIndicator(color: AppColors.primary))
+                    child: CircularProgressIndicator(color: AppColors.primary),
+                  )
                 : _messages.isEmpty
-                    ? const Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.chat_bubble_outline,
-                                size: 64, color: AppColors.textHint),
-                            SizedBox(height: 16),
-                            Text(
-                              'No messages yet',
-                              style:
-                                  TextStyle(color: AppColors.textSecondary),
-                            ),
-                            SizedBox(height: 8),
-                            Text(
-                              'Start the conversation!',
-                              style:
-                                  TextStyle(color: AppColors.textSecondary),
-                            ),
-                          ],
+                ? const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.chat_bubble_outline,
+                          size: 64,
+                          color: AppColors.textHint,
                         ),
-                      )
-                    : ListView.builder(
-                        controller: _scrollController,
-                        padding: const EdgeInsets.all(16),
-                        itemCount: _messages.length,
-                        itemBuilder: (context, index) {
-                          final message = _messages[index];
-                          final isMe =
-                              message['sender_id'] == _currentUserId;
+                        SizedBox(height: 16),
+                        Text(
+                          'No messages yet',
+                          style: TextStyle(color: AppColors.textSecondary),
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          'Start the conversation!',
+                          style: TextStyle(color: AppColors.textSecondary),
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _messages.length,
+                    itemBuilder: (context, index) {
+                      final message = _messages[index];
+                      final isMe = message['sender_id'] == _currentUserId;
 
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: Row(
-                              mainAxisAlignment: isMe
-                                  ? MainAxisAlignment.end
-                                  : MainAxisAlignment.start,
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                if (!isMe) ...[
-                                  Container(
-                                    width: 28,
-                                    height: 28,
-                                    decoration: BoxDecoration(
-                                      color: AppColors.primary
-                                          .withValues(alpha: 0.1),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Icon(Icons.person,
-                                        size: 16,
-                                        color: AppColors.primary),
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Row(
+                          mainAxisAlignment: isMe
+                              ? MainAxisAlignment.end
+                              : MainAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            if (!isMe) ...[
+                              Container(
+                                width: 28,
+                                height: 28,
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withValues(
+                                    alpha: 0.1,
                                   ),
-                                  const SizedBox(width: 8),
-                                ],
-                                Column(
-                                  crossAxisAlignment: isMe
-                                      ? CrossAxisAlignment.end
-                                      : CrossAxisAlignment.start,
-                                  children: [
-                                    Container(
-                                      constraints: BoxConstraints(
-                                        maxWidth:
-                                            MediaQuery.of(context).size.width *
-                                                0.7,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.person,
+                                  size: 16,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                            ],
+                            Column(
+                              crossAxisAlignment: isMe
+                                  ? CrossAxisAlignment.end
+                                  : CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  constraints: BoxConstraints(
+                                    maxWidth:
+                                        MediaQuery.of(context).size.width * 0.7,
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 10,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: isMe
+                                        ? AppColors.primary
+                                        : AppColors.surface,
+                                    borderRadius: BorderRadius.only(
+                                      topLeft: const Radius.circular(16),
+                                      topRight: const Radius.circular(16),
+                                      bottomLeft: Radius.circular(
+                                        isMe ? 16 : 4,
                                       ),
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 14, vertical: 10),
-                                      decoration: BoxDecoration(
-                                        color: isMe
-                                            ? AppColors.primary
-                                            : AppColors.surface,
-                                        borderRadius: BorderRadius.only(
-                                          topLeft:
-                                              const Radius.circular(16),
-                                          topRight:
-                                              const Radius.circular(16),
-                                          bottomLeft: Radius.circular(
-                                              isMe ? 16 : 4),
-                                          bottomRight: Radius.circular(
-                                              isMe ? 4 : 16),
-                                        ),
-                                        border: isMe
-                                            ? null
-                                            : Border.all(
-                                                color: AppColors.border),
-                                      ),
-                                      child: Text(
-                                        message['content'] ?? '',
-                                        style: TextStyle(
-                                          fontSize: 14,
-                                          color: isMe
-                                              ? Colors.white
-                                              : AppColors.textPrimary,
-                                        ),
+                                      bottomRight: Radius.circular(
+                                        isMe ? 4 : 16,
                                       ),
                                     ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      _formatTime(message['created_at']),
-                                      style: const TextStyle(
-                                        fontSize: 11,
-                                        color: AppColors.textHint,
-                                      ),
+                                    border: isMe
+                                        ? null
+                                        : Border.all(color: AppColors.border),
+                                  ),
+                                  child: Text(
+                                    message['content'] ?? '',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: isMe
+                                          ? Colors.white
+                                          : AppColors.textPrimary,
                                     ),
-                                  ],
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  _formatTime(message['created_at']),
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.textHint,
+                                  ),
                                 ),
                               ],
                             ),
-                          );
-                        },
-                      ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
           ),
 
           // Message input
@@ -357,11 +445,14 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(24),
-                          borderSide:
-                              const BorderSide(color: AppColors.primary),
+                          borderSide: const BorderSide(
+                            color: AppColors.primary,
+                          ),
                         ),
                         contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 10),
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
                         filled: true,
                         fillColor: AppColors.background,
                       ),
@@ -388,8 +479,11 @@ class _ChatScreenState extends State<ChatScreen> {
                                 strokeWidth: 2,
                               ),
                             )
-                          : const Icon(Icons.send,
-                              color: Colors.white, size: 20),
+                          : const Icon(
+                              Icons.send,
+                              color: Colors.white,
+                              size: 20,
+                            ),
                     ),
                   ),
                 ],

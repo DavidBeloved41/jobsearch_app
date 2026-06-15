@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/supabase/supabase_service.dart';
+import '../../../core/services/biometric_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/theme_provider.dart';
 
@@ -22,6 +23,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   // FIX: Added _profileVisibility state (was missing before)
   String _profileVisibility = 'everyone';
 
+  // Biometric settings
+  bool _biometricAvailable = false;
+  bool _biometricEnabled = false;
+  String _biometricLabel = 'Biometrics';
+
   @override
   void initState() {
     super.initState();
@@ -30,8 +36,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Future<void> _loadSettings() async {
     try {
-      final userId = Supabase.instance.client.auth.currentUser!.id;
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (userId == null) {
+        setState(() => _isLoading = false);
+        debugPrint('No user ID available for loading settings');
+        return;
+      }
       final profile = await SupabaseService.getProfile(userId);
+
+      // Load biometric settings
+      final biometricAvailable = await BiometricService.isAvailable();
+      final biometricEnabled = await BiometricService.isBiometricEnabled();
+      final biometricLabel = await BiometricService.getBiometricLabel();
+
       if (profile != null) {
         setState(() {
           _jobAlerts = profile['notify_job_alerts'] ?? true;
@@ -48,6 +65,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           } else {
             _profileVisibility = 'everyone';
           }
+
+          // Set biometric state
+          _biometricAvailable = biometricAvailable;
+          _biometricEnabled = biometricEnabled;
+          _biometricLabel = biometricLabel;
         });
       }
     } catch (e) {
@@ -60,7 +82,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   // FIX: Changed bool to dynamic so it can save strings too
   Future<void> _saveSetting(String key, dynamic value) async {
     try {
-      final userId = Supabase.instance.client.auth.currentUser!.id;
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (userId == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Please sign in to save settings'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+        return;
+      }
       await SupabaseService.updateProfile(userId, {
         key: value,
         'updated_at': DateTime.now().toIso8601String(),
@@ -71,6 +104,83 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Failed to save setting'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _toggleBiometric(bool enabled) async {
+    try {
+      if (enabled) {
+        // User wants to enable biometric - show confirmation
+        showModalBottomSheet(
+          context: context,
+          backgroundColor: AppColors.surf(context),
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          builder: (sheetContext) => Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  _biometricLabel == 'Face ID'
+                      ? Icons.face_outlined
+                      : Icons.fingerprint,
+                  size: 48,
+                  color: AppColors.primary,
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Note: Enable $_biometricLabel on login first',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: AppColors.textSec(context),
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Biometric will be saved the next time you log in with your password.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSec(context),
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(sheetContext);
+                  },
+                  child: const Text('Got it'),
+                ),
+              ],
+            ),
+          ),
+        );
+      } else {
+        // User wants to disable biometric
+        await BiometricService.disableBiometric();
+        if (mounted) {
+          setState(() => _biometricEnabled = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Biometric authentication disabled'),
+              backgroundColor: AppColors.success,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Error toggling biometric: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
             backgroundColor: AppColors.error,
           ),
         );
@@ -261,8 +371,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                               await Supabase.instance.client.auth
                                   .resetPasswordForEmail(
                                     email,
-                                    redirectTo:
-                                        'smartjob://reset-password',
+                                    redirectTo: 'smartjob://reset-password',
                                   );
                               if (context.mounted) {
                                 Navigator.pop(context);
@@ -543,6 +652,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           subtitle: 'Update your password',
                           onTap: _showChangePasswordDialog,
                         ),
+                        if (_biometricAvailable) ...[
+                          _Divider(),
+                          _SwitchTile(
+                            icon: _biometricLabel == 'Face ID'
+                                ? Icons.face_outlined
+                                : Icons.fingerprint,
+                            label: _biometricLabel,
+                            subtitle: 'Fast sign in with biometrics',
+                            value: _biometricEnabled,
+                            onChanged: _toggleBiometric,
+                          ),
+                        ],
                         _Divider(),
                         _TapTile(
                           icon: Icons.download_outlined,
