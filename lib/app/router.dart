@@ -6,6 +6,8 @@ import '../features/auth/screens/signup_screen.dart';
 import '../features/auth/screens/reset_password_confirmation_screen.dart';
 import '../features/auth/screens/splash_screen.dart';
 import '../features/jobs/screens/home_screen.dart';
+import '../features/employer/screens/post_job_screen.dart';
+import '../features/employer/screens/my_jobs_screen.dart';
 
 class AppRoutes {
   static const splash = '/splash';
@@ -108,6 +110,14 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: AppRoutes.home,
       builder: (context, state) => const HomeScreen(),
+    ),
+    GoRoute(
+      path: '/employer/post-job',
+      builder: (context, state) => const PostJobScreen(),
+    ),
+    GoRoute(
+      path: '/employer/my-postings',
+      builder: (context, state) => const MyJobsScreen(),
     ),
     GoRoute(
       path: AppRoutes.login,
