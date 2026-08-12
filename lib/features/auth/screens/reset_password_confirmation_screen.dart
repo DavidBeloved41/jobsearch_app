@@ -1,26 +1,24 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../../app/router.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/auth/password_recovery_notifier.dart';
+import '../../../core/auth/password_recovery_state.dart';
 import '../../../core/theme/app_colors.dart';
 
-class ResetPasswordConfirmationScreen extends StatefulWidget {
+class ResetPasswordConfirmationScreen extends ConsumerStatefulWidget {
   const ResetPasswordConfirmationScreen({super.key});
 
   @override
-  State<ResetPasswordConfirmationScreen> createState() =>
+  ConsumerState<ResetPasswordConfirmationScreen> createState() =>
       _ResetPasswordConfirmationScreenState();
 }
 
 class _ResetPasswordConfirmationScreenState
-    extends State<ResetPasswordConfirmationScreen> {
+    extends ConsumerState<ResetPasswordConfirmationScreen> {
   final _formKey = GlobalKey<FormState>();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
-  bool _isLoading = false;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
-  bool _passwordReset = false;
 
   @override
   void dispose() {
@@ -33,80 +31,51 @@ class _ResetPasswordConfirmationScreenState
     if (!_formKey.currentState!.validate()) return;
 
     if (_passwordController.text != _confirmPasswordController.text) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Passwords do not match'),
-          backgroundColor: AppColors.error,
-        ),
-      );
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
-    try {
-      await Supabase.instance.client.auth.updateUser(
-        UserAttributes(password: _passwordController.text.trim()),
-      );
-
-      // Clear the recovery state so router stops redirecting here
-      authNotifier.clearPasswordRecovery();
-
-      setState(() {
-        _passwordReset = true;
-        _isLoading = false;
-      });
-    } on AuthException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.message),
-            backgroundColor: AppColors.error,
-          ),
-        );
-      }
-      setState(() => _isLoading = false);
-    } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Something went wrong. Please try again.'),
+            content: Text('Passwords do not match'),
             backgroundColor: AppColors.error,
           ),
         );
       }
-      setState(() => _isLoading = false);
+      return;
     }
+
+    await ref
+        .read(passwordRecoveryProvider.notifier)
+        .resetPassword(_passwordController.text);
   }
 
   @override
   Widget build(BuildContext context) {
+    final state = ref.watch(passwordRecoveryProvider);
+
     return Scaffold(
-      backgroundColor: AppColors.bg(context),
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        backgroundColor: AppColors.bg(context),
+        backgroundColor: AppColors.background,
         elevation: 0,
-        leading: _passwordReset
-            ? null
-            : IconButton(
-                icon: Icon(Icons.arrow_back,
-                    color: AppColors.text(context)),
-                onPressed: () {
-                  authNotifier.clearPasswordRecovery();
-                  GoRouter.of(context).go(AppRoutes.login);
-                },
-              ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
+          onPressed: () {
+            ref.read(passwordRecoveryProvider.notifier).clear();
+            Navigator.of(context).pop();
+          },
+        ),
       ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: _passwordReset ? _buildSuccessView() : _buildFormView(),
+          child: state.resetSuccess
+              ? _buildSuccessView()
+              : _buildFormView(state),
         ),
       ),
     );
   }
 
-  Widget _buildFormView() {
+  Widget _buildFormView(PasswordRecoveryState state) {
     return SingleChildScrollView(
       child: Form(
         key: _formKey,
@@ -128,24 +97,32 @@ class _ResetPasswordConfirmationScreenState
               ),
             ),
             const SizedBox(height: 24),
-            Text(
+            const Text(
               'Create new password',
               style: TextStyle(
                 fontSize: 28,
                 fontWeight: FontWeight.bold,
-                color: AppColors.text(context),
+                color: AppColors.textPrimary,
               ),
             ),
             const SizedBox(height: 8),
-            Text(
+            const Text(
               'Enter a new password to secure your account.',
               style: TextStyle(
                 fontSize: 15,
-                color: AppColors.textSec(context),
+                color: AppColors.textSecondary,
                 height: 1.5,
               ),
             ),
             const SizedBox(height: 32),
+            if (state.hasError)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Text(
+                  state.errorMessage ?? 'Unable to reset your password.',
+                  style: const TextStyle(color: AppColors.error),
+                ),
+              ),
             TextFormField(
               controller: _passwordController,
               obscureText: _obscurePassword,
@@ -159,8 +136,9 @@ class _ResetPasswordConfirmationScreenState
                         ? Icons.visibility_outlined
                         : Icons.visibility_off_outlined,
                   ),
-                  onPressed: () =>
-                      setState(() => _obscurePassword = !_obscurePassword),
+                  onPressed: () {
+                    setState(() => _obscurePassword = !_obscurePassword);
+                  },
                 ),
               ),
               validator: (value) {
@@ -187,8 +165,11 @@ class _ResetPasswordConfirmationScreenState
                         ? Icons.visibility_outlined
                         : Icons.visibility_off_outlined,
                   ),
-                  onPressed: () => setState(() =>
-                      _obscureConfirmPassword = !_obscureConfirmPassword),
+                  onPressed: () {
+                    setState(
+                      () => _obscureConfirmPassword = !_obscureConfirmPassword,
+                    );
+                  },
                 ),
               ),
               validator: (value) {
@@ -200,17 +181,24 @@ class _ResetPasswordConfirmationScreenState
             ),
             const SizedBox(height: 24),
             ElevatedButton(
-              onPressed: _isLoading ? null : _resetPassword,
-              child: _isLoading
-                  ? const CircularProgressIndicator(color: Colors.white)
+              onPressed: state.isLoading ? null : _resetPassword,
+              child: state.isLoading
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
                   : const Text('Update password'),
             ),
             const SizedBox(height: 16),
             Center(
               child: TextButton(
                 onPressed: () {
-                  authNotifier.clearPasswordRecovery();
-                  GoRouter.of(context).go(AppRoutes.login);
+                  ref.read(passwordRecoveryProvider.notifier).clear();
+                  Navigator.of(context).pop();
                 },
                 child: const Text('Cancel'),
               ),
@@ -239,27 +227,30 @@ class _ResetPasswordConfirmationScreenState
           ),
         ),
         const SizedBox(height: 24),
-        Text(
+        const Text(
           'Password updated!',
           style: TextStyle(
             fontSize: 24,
             fontWeight: FontWeight.bold,
-            color: AppColors.text(context),
+            color: AppColors.textPrimary,
           ),
         ),
         const SizedBox(height: 12),
-        Text(
+        const Text(
           'Your password has been successfully reset.\nYou can now sign in with your new password.',
           style: TextStyle(
             fontSize: 15,
-            color: AppColors.textSec(context),
+            color: AppColors.textSecondary,
             height: 1.5,
           ),
           textAlign: TextAlign.center,
         ),
         const SizedBox(height: 32),
         ElevatedButton(
-          onPressed: () => GoRouter.of(context).go(AppRoutes.login),
+          onPressed: () {
+            ref.read(passwordRecoveryProvider.notifier).clear();
+            Navigator.of(context).popUntil((route) => route.isFirst);
+          },
           child: const Text('Back to sign in'),
         ),
       ],

@@ -3,10 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../app/router.dart';
+import '../../../core/supabase/supabase_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/services/biometric_service.dart';
-import 'signup_screen.dart';
-import 'forgot_password_screen.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -57,6 +56,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
+    final messenger = ScaffoldMessenger.of(context);
 
     try {
       await Supabase.instance.client.auth.signInWithPassword(
@@ -70,11 +70,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           _passwordController.text.trim(),
         );
       } else if (mounted) {
-        GoRouter.of(context).go(AppRoutes.home);
+        await _navigateAfterLogin();
       }
     } on AuthException catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        messenger.showSnackBar(
           SnackBar(content: Text(e.message), backgroundColor: AppColors.error),
         );
       }
@@ -85,6 +85,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   Future<void> _loginWithBiometric() async {
     setState(() => _isLoading = true);
+    final messenger = ScaffoldMessenger.of(context);
     try {
       final authenticated = await BiometricService.authenticate(
         reason: 'Sign in to SmartJob',
@@ -106,7 +107,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             _biometricEnabled = false;
             _isLoading = false;
           });
-          ScaffoldMessenger.of(context).showSnackBar(
+          messenger.showSnackBar(
             const SnackBar(
               content: Text('Please sign in with your password first'),
               backgroundColor: AppColors.error,
@@ -121,7 +122,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         password: password,
       );
 
-      if (mounted) GoRouter.of(context).go(AppRoutes.home);
+      if (mounted) await _navigateAfterLogin();
     } on AuthException catch (e) {
       await BiometricService.disableBiometric();
       setState(() {
@@ -129,7 +130,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         _isLoading = false;
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        messenger.showSnackBar(
           SnackBar(content: Text(e.message), backgroundColor: AppColors.error),
         );
       }
@@ -165,7 +166,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  color: Theme.of(context).colorScheme.onSurface,
+                  color: Theme.of(sheetContext).colorScheme.onSurface,
                 ),
               ),
               const SizedBox(height: 8),
@@ -174,7 +175,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 style: TextStyle(
                   fontSize: 14,
                   color: Theme.of(
-                    context,
+                    sheetContext,
                   ).colorScheme.onSurface.withValues(alpha: 0.6),
                 ),
                 textAlign: TextAlign.center,
@@ -182,6 +183,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               const SizedBox(height: 24),
               ElevatedButton(
                 onPressed: () async {
+                  final messenger = ScaffoldMessenger.of(sheetContext);
                   try {
                     debugPrint('Saving biometric credentials for $email');
                     await BiometricService.saveCredentials(email, password);
@@ -192,14 +194,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     }
                     debugPrint('Biometric setup successful');
                     if (mounted) {
-                      GoRouter.of(context).go(AppRoutes.home);
+                      await _navigateAfterLogin();
                     }
                   } catch (e) {
                     debugPrint('Error saving biometric credentials: $e');
                     if (!mounted) return;
                     Navigator.pop(sheetContext);
                     if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
+                      messenger.showSnackBar(
                         SnackBar(
                           content: Text(
                             'Failed to set up $_biometricLabel: $e',
@@ -216,7 +218,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               TextButton(
                 onPressed: () {
                   Navigator.pop(sheetContext);
-                  if (mounted) GoRouter.of(context).go(AppRoutes.home);
+                  if (mounted) _navigateAfterLogin();
                 },
                 child: const Text('Not now'),
               ),
@@ -259,7 +261,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     color: AppColors.textSec(context),
                   ),
                 ),
-                const SizedBox(height: 48),
+                const SizedBox(height: 24),
                 TextFormField(
                   controller: _emailController,
                   keyboardType: TextInputType.emailAddress,
@@ -310,12 +312,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const ForgotPasswordScreen(),
-                      ),
-                    ),
+                    onPressed: () =>
+                        GoRouter.of(context).push(AppRoutes.forgotPassword),
                     child: const Text('Forgot password?'),
+                  ),
+                ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () =>
+                        GoRouter.of(context).push(AppRoutes.emailVerification),
+                    child: const Text('Resend verification email'),
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -357,9 +364,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       style: TextStyle(color: AppColors.textSec(context)),
                     ),
                     TextButton(
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const SignupScreen()),
-                      ),
+                      onPressed: () =>
+                          GoRouter.of(context).push(AppRoutes.signup),
                       child: const Text('Sign up'),
                     ),
                   ],
@@ -370,5 +376,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _navigateAfterLogin() async {
+    if (!mounted) return;
+
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    if (currentUser == null) {
+      GoRouter.of(context).go(AppRoutes.login);
+      return;
+    }
+
+    final destination = await SupabaseService.getRoleRoute(currentUser.id);
+    if (!mounted) return;
+    GoRouter.of(context).go(destination);
   }
 }

@@ -15,6 +15,8 @@ import 'help_screen.dart';
 import 'career_advice_screen.dart';
 import 'profile_visibility_screen.dart';
 import '../../employer/screens/employer_candidates_screen.dart';
+import '../../employer/screens/my_jobs_screen.dart';
+import '../../employer/screens/post_job_screen.dart';
 import 'settings_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -29,7 +31,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   int _appliedCount = 0;
   int _interviewingCount = 0;
   int _offersCount = 0;
+  int _jobsPostedCount = 0;
   bool _isOpenToWork = true;
+  String? _accountType = 'candidate';
+  String? _companyName;
   String? _profilePhotoUrl; // FIX: track photo URL in state
   String? _fullName; // FIX: load full_name from profiles table too
 
@@ -51,8 +56,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _loadStats() async {
     try {
       final userId = user!.id;
-      final applications = await SupabaseService.getApplications(userId);
       final profile = await SupabaseService.getProfile(userId);
+      final isEmployer = (profile?['account_type'] as String?) == 'employer';
+
+      if (isEmployer) {
+        final jobs = await SupabaseService.getJobsByPoster(userId);
+        if (mounted) {
+          setState(() {
+            _jobsPostedCount = jobs.length;
+            _accountType = 'employer';
+            _companyName = profile?['company_name'];
+            _profilePhotoUrl = profile?['profile_photo_url'];
+            _fullName = profile?['full_name'];
+          });
+        }
+        return;
+      }
+
+      final applications = await SupabaseService.getApplications(userId);
       if (mounted) {
         setState(() {
           _appliedCount = applications
@@ -65,7 +86,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               .where((a) => a['status'] == 'offered')
               .length;
           _isOpenToWork = profile?['is_open_to_work'] ?? true;
-          // FIX: load photo URL and full name from profile
+          _accountType = profile?['account_type'] as String? ?? 'candidate';
           _profilePhotoUrl = profile?['profile_photo_url'];
           _fullName = profile?['full_name'];
         });
@@ -224,8 +245,50 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       color: AppColors.textSec(context),
                     ),
                   ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _accountType == 'employer'
+                        ? 'Employer account'
+                        : 'Job seeker account',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textSec(context),
+                    ),
+                  ),
                   const SizedBox(height: 16),
-                  if (_isOpenToWork)
+                  if (_companyName != null && _companyName!.isNotEmpty)
+                    Text(
+                      _companyName!,
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: AppColors.text(context),
+                      ),
+                    ),
+                  if (_accountType == 'employer') ...[
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _StatItem(label: 'Jobs', value: '$_jobsPostedCount'),
+                        const SizedBox(width: 12),
+                        ElevatedButton(
+                          onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const PostJobScreen(),
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            minimumSize: const Size(140, 40),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: const Text('Post a job'),
+                        ),
+                      ],
+                    ),
+                  ],
+                  if (_isOpenToWork && _accountType != 'employer')
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,
@@ -266,13 +329,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
               color: AppColors.surf(context),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _StatItem(label: 'Applied', value: '$_appliedCount'),
-                  _VerticalDivider(),
-                  _StatItem(label: 'Interviews', value: '$_interviewingCount'),
-                  _VerticalDivider(),
-                  _StatItem(label: 'Offers', value: '$_offersCount'),
-                ],
+                children: _accountType == 'employer'
+                    ? [
+                        _StatItem(
+                          label: 'Jobs posted',
+                          value: '$_jobsPostedCount',
+                        ),
+                        _VerticalDivider(),
+                        const _StatItem(label: 'Candidates', value: '-'),
+                        _VerticalDivider(),
+                        const _StatItem(label: 'Messages', value: '-'),
+                      ]
+                    : [
+                        _StatItem(label: 'Applied', value: '$_appliedCount'),
+                        _VerticalDivider(),
+                        _StatItem(
+                          label: 'Interviews',
+                          value: '$_interviewingCount',
+                        ),
+                        _VerticalDivider(),
+                        _StatItem(label: 'Offers', value: '$_offersCount'),
+                      ],
               ),
             ),
 
@@ -313,9 +390,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     icon: Icons.insights_outlined,
                     label: 'Skill gap analysis',
                     onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const SkillGapScreen(),
-                      ),
+                      MaterialPageRoute(builder: (_) => const SkillGapScreen()),
                     ),
                   ),
                   _MenuItem(
@@ -345,15 +420,43 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                   ),
-                  _MenuItem(
-                    icon: Icons.people_outline,
-                    label: 'Browse candidates (Employer)',
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const EmployerCandidatesScreen(),
+                  if (_accountType == 'employer') ...[
+                    _MenuItem(
+                      icon: Icons.post_add_outlined,
+                      label: 'Post a job',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const PostJobScreen(),
+                        ),
                       ),
                     ),
-                  ),
+                    _MenuItem(
+                      icon: Icons.work_outline,
+                      label: 'My postings',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const MyJobsScreen()),
+                      ),
+                    ),
+                    _MenuItem(
+                      icon: Icons.people_outline,
+                      label: 'Browse candidates',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const EmployerCandidatesScreen(),
+                        ),
+                      ),
+                    ),
+                  ] else ...[
+                    _MenuItem(
+                      icon: Icons.post_add_outlined,
+                      label: 'Browse jobs',
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const CareerAdviceScreen(),
+                        ),
+                      ),
+                    ),
+                  ],
                   _MenuItem(
                     icon: Icons.menu_book_outlined,
                     label: 'Career advice',

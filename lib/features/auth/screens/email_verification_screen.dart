@@ -1,18 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../core/auth/password_recovery_notifier.dart';
-import '../../../core/auth/password_recovery_state.dart';
+import '../../../core/auth/email_verification_notifier.dart';
+import '../../../core/auth/email_verification_state.dart';
 import '../../../core/theme/app_colors.dart';
 
-class ForgotPasswordScreen extends ConsumerStatefulWidget {
-  const ForgotPasswordScreen({super.key});
+class EmailVerificationScreen extends ConsumerStatefulWidget {
+  const EmailVerificationScreen({super.key});
 
   @override
-  ConsumerState<ForgotPasswordScreen> createState() =>
-      _ForgotPasswordScreenState();
+  ConsumerState<EmailVerificationScreen> createState() =>
+      _EmailVerificationScreenState();
 }
 
-class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
+class _EmailVerificationScreenState
+    extends ConsumerState<EmailVerificationScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
 
@@ -22,17 +23,20 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
     super.dispose();
   }
 
-  Future<void> _sendResetEmail() async {
+  Future<void> _resendVerificationEmail() async {
     if (!_formKey.currentState!.validate()) return;
 
     await ref
-        .read(passwordRecoveryProvider.notifier)
-        .sendResetEmail(_emailController.text);
+        .read(emailVerificationProvider.notifier)
+        .resendVerificationEmail(_emailController.text);
   }
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(passwordRecoveryProvider);
+    final state = ref.watch(emailVerificationProvider);
+    if (_emailController.text.isEmpty && state.email.isNotEmpty) {
+      _emailController.text = state.email;
+    }
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -42,7 +46,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: AppColors.textPrimary),
           onPressed: () {
-            ref.read(passwordRecoveryProvider.notifier).clear();
+            ref.read(emailVerificationProvider.notifier).clear();
             Navigator.of(context).pop();
           },
         ),
@@ -56,7 +60,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
     );
   }
 
-  Widget _buildFormView(PasswordRecoveryState state) {
+  Widget _buildFormView(EmailVerificationState state) {
     return SingleChildScrollView(
       child: Form(
         key: _formKey,
@@ -72,14 +76,14 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
                 shape: BoxShape.circle,
               ),
               child: const Icon(
-                Icons.lock_reset_outlined,
+                Icons.email_outlined,
                 size: 32,
                 color: AppColors.primary,
               ),
             ),
             const SizedBox(height: 24),
             const Text(
-              'Forgot password?',
+              'Verify your email',
               style: TextStyle(
                 fontSize: 28,
                 fontWeight: FontWeight.bold,
@@ -88,7 +92,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Enter your email address and we\'ll send you a link to reset your password.',
+              'Enter the email associated with your account and we will resend a verification link.',
               style: TextStyle(
                 fontSize: 15,
                 color: AppColors.textSecondary,
@@ -100,7 +104,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
               Padding(
                 padding: const EdgeInsets.only(bottom: 16),
                 child: Text(
-                  state.errorMessage ?? 'Failed to send reset email.',
+                  state.errorMessage ?? 'Failed to resend verification email.',
                   style: const TextStyle(color: AppColors.error),
                 ),
               ),
@@ -124,7 +128,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
             ),
             const SizedBox(height: 24),
             ElevatedButton(
-              onPressed: state.isLoading ? null : _sendResetEmail,
+              onPressed: state.isLoading ? null : _resendVerificationEmail,
               child: state.isLoading
                   ? const SizedBox(
                       width: 20,
@@ -134,13 +138,13 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
                         strokeWidth: 2,
                       ),
                     )
-                  : const Text('Send reset link'),
+                  : const Text('Resend verification email'),
             ),
             const SizedBox(height: 16),
             Center(
               child: TextButton(
                 onPressed: () {
-                  ref.read(passwordRecoveryProvider.notifier).clear();
+                  ref.read(emailVerificationProvider.notifier).clear();
                   Navigator.of(context).pop();
                 },
                 child: const Text('Back to sign in'),
@@ -164,14 +168,14 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
             shape: BoxShape.circle,
           ),
           child: const Icon(
-            Icons.mark_email_read_outlined,
+            Icons.check_circle_outline,
             size: 50,
             color: AppColors.success,
           ),
         ),
         const SizedBox(height: 24),
         const Text(
-          'Check your email',
+          'Verification sent!',
           style: TextStyle(
             fontSize: 24,
             fontWeight: FontWeight.bold,
@@ -179,9 +183,9 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        Text(
-          'We sent a password reset link to\n${_emailController.text.trim()}',
-          style: const TextStyle(
+        const Text(
+          'Check your inbox for a verification link. Once verified, return to sign in.',
+          style: TextStyle(
             fontSize: 15,
             color: AppColors.textSecondary,
             height: 1.5,
@@ -191,7 +195,7 @@ class _ForgotPasswordScreenState extends ConsumerState<ForgotPasswordScreen> {
         const SizedBox(height: 32),
         ElevatedButton(
           onPressed: () {
-            ref.read(passwordRecoveryProvider.notifier).clear();
+            ref.read(emailVerificationProvider.notifier).clear();
             Navigator.of(context).pop();
           },
           child: const Text('Back to sign in'),

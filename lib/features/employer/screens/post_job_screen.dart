@@ -146,10 +146,11 @@ class _PostJobScreenState extends State<PostJobScreen> {
         }
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Failed to save job: $e')));
+      }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -186,7 +187,7 @@ class _PostJobScreenState extends State<PostJobScreen> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                value: _employmentType,
+                initialValue: _employmentType,
                 items: const [
                   DropdownMenuItem(
                     value: 'full-time',
@@ -204,7 +205,7 @@ class _PostJobScreenState extends State<PostJobScreen> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                value: _workModel,
+                initialValue: _workModel,
                 items: const [
                   DropdownMenuItem(value: 'all', child: Text('Any')),
                   DropdownMenuItem(value: 'remote', child: Text('Remote')),
@@ -246,8 +247,9 @@ class _PostJobScreenState extends State<PostJobScreen> {
                 maxLines: 12,
                 validator: (v) {
                   if (v == null || v.trim().isEmpty) return 'Required';
-                  if (v.trim().length < 30)
+                  if (v.trim().length < 30) {
                     return 'Description must be at least 30 characters';
+                  }
                   return null;
                 },
               ),

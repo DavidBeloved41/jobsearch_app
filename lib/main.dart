@@ -5,6 +5,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:app_links/app_links.dart';
 import 'app/router.dart';
+import 'core/auth/auth_controller.dart';
 import 'core/services/notification_service.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_provider.dart';
@@ -30,14 +31,13 @@ Future<void> main() async {
   await Supabase.initialize(
     url: dotenv.env['SUPABASE_URL']!,
     anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
-    // FIX: Tell Supabase to use PKCE flow so password recovery
-    // tokens are handled correctly when the deep link opens the app
     authOptions: const FlutterAuthClientOptions(
       authFlowType: AuthFlowType.pkce,
     ),
   );
 
-  // Handle initial deep link for password reset
+  authNotifier = AuthNotifier();
+  var routerInitialLocation = AppRoutes.splash;
   final appLinks = AppLinks();
   try {
     final initialLink = await appLinks.getInitialLink();
@@ -46,6 +46,7 @@ Future<void> main() async {
       debugPrint('Processing URL: $initialLink');
       if (_isPasswordRecoveryLink(initialLink)) {
         authNotifier.setPasswordRecoveryFromLink(initialLink);
+        routerInitialLocation = AppRoutes.resetPassword;
       }
       await Supabase.instance.client.auth.getSessionFromUrl(initialLink);
       debugPrint('Session processed from URL');
@@ -54,13 +55,15 @@ Future<void> main() async {
     debugPrint('Error handling initial link: $e');
   }
 
-  // Listen for deep links while app is running
+  appRouter = createRouter(initialLocation: routerInitialLocation);
+
   appLinks.uriLinkStream.listen(
     (Uri? link) async {
       debugPrint('Deep link received: $link');
       if (link != null) {
         if (_isPasswordRecoveryLink(link)) {
           authNotifier.setPasswordRecoveryFromLink(link);
+          appRouter.go(AppRoutes.resetPassword);
         }
         await Supabase.instance.client.auth.getSessionFromUrl(link);
       }

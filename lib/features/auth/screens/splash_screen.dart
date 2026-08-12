@@ -3,8 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../app/router.dart';
+import '../../../core/supabase/supabase_service.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../core/services/biometric_service.dart';
 
 class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
@@ -21,53 +21,30 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
   }
 
   Future<void> _checkAuth() async {
+    // Show splash briefly while we check for an existing session.
     await Future.delayed(const Duration(seconds: 2));
     if (!mounted) return;
 
-    final session = Supabase.instance.client.auth.currentSession;
+    try {
+      final session = Supabase.instance.client.auth.currentSession;
+      final currentUser = Supabase.instance.client.auth.currentUser;
 
-    if (session != null) {
-      // Already logged in — go straight home
-      GoRouter.of(context).go(AppRoutes.home);
+      if (session == null || currentUser == null) {
+        // No active session — show login
+        if (mounted) GoRouter.of(context).go(AppRoutes.login);
+        return;
+      }
+
+      // Active session exists — resolve profile/role and route accordingly
+      final destination = await SupabaseService.getRoleRoute(currentUser.id);
+      if (!mounted) return;
+      GoRouter.of(context).go(destination);
+      return;
+    } catch (e) {
+      debugPrint('Splash: error while resolving session/role: $e');
+      if (mounted) GoRouter.of(context).go(AppRoutes.login);
       return;
     }
-
-    // No active session — check if biometric login is enabled
-    final biometricEnabled = await BiometricService.isBiometricEnabled();
-    final biometricAvailable = await BiometricService.isAvailable();
-
-    if (biometricEnabled && biometricAvailable) {
-      // Auto-prompt biometrics
-      final authenticated = await BiometricService.authenticate(
-        reason: 'Sign in to SmartJob',
-      );
-
-      if (!mounted) return;
-
-      if (authenticated) {
-        // Retrieve stored credentials and sign in
-        final credentials = await BiometricService.getCredentials();
-        final email = credentials['email'];
-        final password = credentials['password'];
-
-        if (email != null && password != null) {
-          try {
-            await Supabase.instance.client.auth.signInWithPassword(
-              email: email,
-              password: password,
-            );
-            if (mounted) GoRouter.of(context).go(AppRoutes.home);
-            return;
-          } catch (e) {
-            // Credentials may be stale — fall through to login screen
-            await BiometricService.disableBiometric();
-          }
-        }
-      }
-    }
-
-    // Fall through to login screen
-    if (mounted) GoRouter.of(context).go(AppRoutes.login);
   }
 
   @override

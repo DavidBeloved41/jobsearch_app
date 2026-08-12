@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
-import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../app/router.dart';
 
 class SupabaseService {
   static final _client = Supabase.instance.client;
@@ -44,16 +45,88 @@ class SupabaseService {
     return results.where((p) => p['id'] != currentUserId).toList();
   }
 
+  static String normalizeAccountType(Object? rawAccountType) {
+    final accountType = (rawAccountType as String? ?? '').trim().toLowerCase();
+    if (accountType == 'employer' || accountType == 'recruiter') {
+      return 'employer';
+    }
+    if (accountType == 'admin' || accountType == 'administrator') {
+      return 'admin';
+    }
+    if (accountType == 'job_seeker' ||
+        accountType == 'job seeker' ||
+        accountType == 'candidate' ||
+        accountType == 'jobseeker') {
+      return 'job_seeker';
+    }
+    // Unknown/unspecified account types should be explicit
+    return 'unknown';
+  }
+
   static bool isRecruiterProfile(Map<String, dynamic> profile) {
-    final accountType = (profile['account_type'] as String? ?? '')
-        .toLowerCase();
-    if (accountType == 'recruiter' || accountType == 'employer') {
+    final accountType = normalizeAccountType(profile['account_type']);
+    if (accountType == 'employer') {
       return true;
     }
     final headline = (profile['headline'] as String? ?? '').toLowerCase();
     return headline.contains('recruiter') ||
         headline.contains('talent acquisition') ||
         headline.contains('hiring manager');
+  }
+
+  static Future<String> getRoleRoute(String userId) async {
+    final profile = await getProfile(userId);
+    var rawAccountType = profile?['account_type'] as String?;
+
+    // Primary source: profiles.account_type
+    // Fallback: auth metadata account_type
+    if (rawAccountType == null || rawAccountType.trim().isEmpty) {
+      final user = _client.auth.currentUser;
+      final metadataAccountType =
+          user?.userMetadata?['account_type'] as String?;
+      rawAccountType = metadataAccountType;
+    }
+
+    // If still no account type, default to job seeker home
+    if (rawAccountType == null || rawAccountType.trim().isEmpty) {
+      debugPrint(
+        'SupabaseService.getRoleRoute: No account_type found for user $userId, defaulting to home',
+      );
+      return AppRoutes.home;
+    }
+
+    final accountType = normalizeAccountType(rawAccountType);
+    switch (accountType) {
+      case 'employer':
+        debugPrint(
+          'SupabaseService.getRoleRoute: User $userId is employer, routing to employer dashboard',
+        );
+        return AppRoutes.employerDashboard;
+      case 'job_seeker':
+      case 'unknown':
+        debugPrint(
+          'SupabaseService.getRoleRoute: User $userId has account_type=$accountType, routing to home',
+        );
+        return AppRoutes.home;
+      default:
+        debugPrint(
+          'SupabaseService.getRoleRoute: Unknown account_type=$accountType for user $userId, defaulting to home',
+        );
+        return AppRoutes.home;
+    }
+  }
+
+  static String roleLabel(String accountType) {
+    switch (normalizeAccountType(accountType)) {
+      case 'employer':
+        return 'Employer';
+      case 'admin':
+        return 'Admin';
+      case 'job_seeker':
+        return 'Job seeker';
+      default:
+        return 'Unknown';
+    }
   }
 
   static Future<List<Map<String, dynamic>>> searchRecruiters(
@@ -446,20 +519,31 @@ class SupabaseService {
     String userId, {
     String? email,
     String? fullName,
+    String? accountType,
   }) async {
+    debugPrint('SupabaseService: Creating profile for user $userId');
     try {
-      debugPrint('SupabaseService: Creating profile for user $userId');
+      final normalizedAccountType = accountType != null
+          ? normalizeAccountType(accountType)
+          : 'job_seeker'; // Default to job_seeker if not specified
+
       await _client.from('profiles').insert({
         'id': userId,
         if (email != null) 'email': email,
         if (fullName != null) 'full_name': fullName,
+        'account_type': normalizedAccountType,
         'created_at': DateTime.now().toIso8601String(),
         'is_open_to_work': true,
       });
-      debugPrint('SupabaseService: Profile created successfully');
+      debugPrint(
+        'SupabaseService: Profile created successfully for user $userId with account_type=$normalizedAccountType',
+      );
     } catch (e) {
-      debugPrint('SupabaseService: Error creating profile: $e');
-      // Don't rethrow - profile might already exist or be created by trigger
+      debugPrint(
+        'SupabaseService: Error creating profile for user $userId: $e',
+      );
+      // Propagate the error so caller knows profile creation failed
+      rethrow;
     }
   }
 
@@ -468,7 +552,23 @@ class SupabaseService {
     String userId,
     Map<String, dynamic> data,
   ) async {
-    await _client.from('profiles').update(data).eq('id', userId);
+    try {
+      final response = await _client
+          .from('profiles')
+          .update(data)
+          .eq('id', userId)
+          .select();
+      final rows = response as List<dynamic>?;
+      if (rows == null || rows.isEmpty) {
+        debugPrint(
+          'SupabaseService: updateProfile found no profile, creating one',
+        );
+        await createProfile(userId);
+      }
+    } catch (e) {
+      debugPrint('SupabaseService: updateProfile error=$e');
+      await createProfile(userId);
+    }
   }
 
   // Save a job
@@ -881,6 +981,29 @@ class SupabaseService {
     } catch (e) {
       debugPrint('SupabaseService: getJobsByPoster $e');
       return [];
+    }
+  }
+
+  // Get total count of applicants across all jobs for a poster
+  static Future<int> getApplicantCountForPoster(String posterId) async {
+    try {
+      // Fetch job ids posted by this poster
+      final jobs = await _client
+          .from('jobs')
+          .select('id')
+          .eq('poster_id', posterId);
+      final jobIds = (jobs as List).map((j) => j['id'] as String).toList();
+      if (jobIds.isEmpty) return 0;
+
+      final inClause = jobIds.map((id) => "'$id'").join(',');
+      final apps = await _client
+          .from('applications')
+          .select('id')
+          .filter('job_id', 'in', '($inClause)');
+      return (apps as List).length;
+    } catch (e) {
+      debugPrint('SupabaseService: getApplicantCountForPoster $e');
+      return 0;
     }
   }
 

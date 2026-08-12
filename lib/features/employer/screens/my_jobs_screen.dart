@@ -33,11 +33,12 @@ class _MyJobsScreenState extends State<MyJobsScreen> {
       return;
     }
     final list = await SupabaseService.getJobsByPoster(userId);
-    if (mounted)
+    if (mounted) {
       setState(() {
         _jobs = list;
         _isLoading = false;
       });
+    }
   }
 
   Future<void> _deleteJob(String jobId) async {
@@ -70,10 +71,11 @@ class _MyJobsScreenState extends State<MyJobsScreen> {
       }
       await _loadJobs();
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Delete failed: $e')));
+      }
     }
   }
 
@@ -89,7 +91,7 @@ class _MyJobsScreenState extends State<MyJobsScreen> {
               child: _jobs.isEmpty
                   ? ListView(
                       children: [
-                        SizedBox(height: 120),
+                        const SizedBox(height: 120),
                         Center(
                           child: Text(
                             'No job postings yet',

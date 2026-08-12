@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../app/router.dart';
+import '../../../core/auth/email_verification_notifier.dart';
+import '../../../core/supabase/supabase_service.dart';
 import '../../../core/theme/app_colors.dart';
-import 'login_screen.dart';
 
 class SignupScreen extends ConsumerStatefulWidget {
-  const SignupScreen({super.key});
+  final String initialAccountType;
+
+  const SignupScreen({super.key, this.initialAccountType = 'job_seeker'});
 
   @override
   ConsumerState<SignupScreen> createState() => _SignupScreenState();
@@ -20,6 +25,13 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
   bool _isLoading = false;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
+  String _selectedAccountType = 'job_seeker';
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedAccountType = widget.initialAccountType;
+  }
 
   @override
   void dispose() {
@@ -31,7 +43,11 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
   }
 
   Future<void> _signup() async {
-    if (!_formKey.currentState!.validate()) return;
+    // Extra defensive check: ensure form is valid before proceeding
+    if (!_formKey.currentState!.validate()) {
+      debugPrint('Signup: form invalid, aborting');
+      return;
+    }
 
     setState(() => _isLoading = true);
 
@@ -39,39 +55,63 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
       final response = await Supabase.instance.client.auth.signUp(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
-        data: {'full_name': _fullNameController.text.trim()},
+        data: {
+          'full_name': _fullNameController.text.trim(),
+          'account_type': _selectedAccountType,
+        },
       );
 
       if (response.user != null) {
-        // FIX: Create profile record immediately after signup
-        // This prevents FK constraint violations when user tries to apply for jobs, save jobs, etc.
+        // Create profile for the new user
+        // Profile creation is critical and must not fail silently
         try {
-          await Supabase.instance.client.from('profiles').insert({
-            'id': response.user!.id,
-            'email': _emailController.text.trim(),
-            'full_name': _fullNameController.text.trim(),
-            'created_at': DateTime.now().toIso8601String(),
-            'is_open_to_work': true,
-          });
-          debugPrint('Profile created for user ${response.user!.id}');
-        } catch (profileError) {
-          debugPrint(
-            'Warning: Could not create profile immediately: $profileError',
+          await SupabaseService.createProfile(
+            response.user!.id,
+            email: _emailController.text.trim(),
+            fullName: _fullNameController.text.trim(),
+            accountType: _selectedAccountType,
           );
-          // Don't fail signup if profile creation fails - it might be a trigger issue
-          // Profile might be created by a database trigger
+          debugPrint(
+            'Signup: Profile created successfully for user ${response.user!.id}',
+          );
+        } catch (profileError) {
+          debugPrint('Signup: Profile creation failed: $profileError');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Failed to create profile: ${profileError.toString()}. Please try again.',
+                ),
+                backgroundColor: AppColors.error,
+              ),
+            );
+          }
+          return;
+        }
+
+        if (!mounted) return;
+
+        final session = Supabase.instance.client.auth.currentSession;
+        // If a session exists immediately after signup we still prefer
+        // to send the user to email verification flow for a clear UX.
+        // Only route to dashboard after a deliberate authentication flow.
+        if (session != null) {
+          debugPrint(
+            'Signup: session present after signUp; routing to email verification instead of dashboard',
+          );
+          ref
+              .read(emailVerificationProvider.notifier)
+              .setEmail(_emailController.text.trim());
+          GoRouter.of(context).go(AppRoutes.emailVerification);
+          return;
         }
 
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Account created! Please verify your email.'),
-              backgroundColor: AppColors.success,
-            ),
-          );
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => const LoginScreen()),
-          );
+          ref
+              .read(emailVerificationProvider.notifier)
+              .setEmail(_emailController.text.trim());
+          GoRouter.of(context).go(AppRoutes.emailVerification);
+          return;
         }
       }
     } on AuthException catch (e) {
@@ -122,6 +162,26 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                   ),
                 ),
                 const SizedBox(height: 32),
+                Wrap(
+                  spacing: 12,
+                  children: [
+                    ChoiceChip(
+                      label: const Text('Job seeker'),
+                      selected: _selectedAccountType == 'job_seeker',
+                      onSelected: (_) {
+                        setState(() => _selectedAccountType = 'job_seeker');
+                      },
+                    ),
+                    ChoiceChip(
+                      label: const Text('Employer'),
+                      selected: _selectedAccountType == 'employer',
+                      onSelected: (_) {
+                        setState(() => _selectedAccountType = 'employer');
+                      },
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
 
                 // Full name field
                 TextFormField(
@@ -228,13 +288,32 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
 
                 // Sign up button
                 ElevatedButton(
-                  onPressed: _isLoading ? null : _signup,
+                  onPressed: _isLoading
+                      ? null
+                      : () {
+                          // Provide immediate feedback if form is invalid
+                          if (!_formKey.currentState!.validate()) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Please complete the form'),
+                              ),
+                            );
+                            return;
+                          }
+                          _signup();
+                        },
                   child: _isLoading
                       ? const CircularProgressIndicator(color: Colors.white)
                       : const Text('Create account'),
                 ),
                 const SizedBox(height: 24),
-
+                if (_selectedAccountType == 'employer') ...[
+                  const Text(
+                    'Employers can sign up with this account type to post jobs and browse candidates.',
+                    style: TextStyle(color: AppColors.textSecondary),
+                  ),
+                  const SizedBox(height: 24),
+                ],
                 // Login link
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
