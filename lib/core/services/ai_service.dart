@@ -97,7 +97,8 @@ Use annual USD salaries. Convert "60k" to 60000.''',
     return complete(
       systemPrompt:
           'Write a concise, professional job cover letter (180-250 words). No placeholders.',
-      userPrompt: '''
+      userPrompt:
+          '''
 Job: ${job['title']}
 Company: ${company?['name'] ?? 'Unknown'}
 Description excerpt: ${(job['description'] as String? ?? '').substring(0, (job['description'] as String? ?? '').length.clamp(0, 800))}
@@ -120,7 +121,8 @@ Bio: ${profile?['bio'] ?? ''}''',
     return complete(
       systemPrompt:
           'Write an ATS-friendly resume draft in plain text with sections: Summary, Skills, Experience, Education. Use bullet points.',
-      userPrompt: '''
+      userPrompt:
+          '''
 Target role: ${targetRole ?? profile?['job_title'] ?? 'Professional'}
 Name: ${profile?['full_name']}
 Experience years: ${profile?['years_of_experience']}
@@ -141,7 +143,8 @@ Bio: ${profile?['bio'] ?? ''}''',
     return complete(
       systemPrompt:
           'Give 2-3 short sentences explaining why this job matches the candidate. Be specific and encouraging.',
-      userPrompt: '''
+      userPrompt:
+          '''
 Job: ${job['title']} at ${company?['name']}
 Match score: $matchScore%
 Matched skills: ${matchedSkills.join(', ')}
@@ -171,7 +174,8 @@ Gaps: ${missingSkills.join(', ')}''',
     final raw = await complete(
       systemPrompt:
           'Rank jobs by fit for the candidate. Reply ONLY with a JSON array of job id strings, best first.',
-      userPrompt: '''
+      userPrompt:
+          '''
 Candidate title: ${profile?['job_title']}
 Skills: ${skills.join(', ')}
 Experience: ${profile?['years_of_experience']} years
@@ -181,7 +185,10 @@ Jobs: ${jsonEncode(summaries)}''',
     if (raw == null) return null;
 
     try {
-      final cleaned = raw.replaceAll('```json', '').replaceAll('```', '').trim();
+      final cleaned = raw
+          .replaceAll('```json', '')
+          .replaceAll('```', '')
+          .trim();
       final list = jsonDecode(cleaned) as List;
       return list.map((e) => e.toString()).toList();
     } catch (e) {
@@ -190,4 +197,3 @@ Jobs: ${jsonEncode(summaries)}''',
     }
   }
 }
-

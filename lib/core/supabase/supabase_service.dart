@@ -1006,6 +1006,63 @@ class SupabaseService {
     }
   }
 
+  // Get count of active jobs for a poster
+  static Future<int> getActiveJobCountForPoster(String posterId) async {
+    try {
+      final response = await _client
+          .from('jobs')
+          .select('id')
+          .eq('poster_id', posterId)
+          .eq('is_active', true);
+      return (response as List).length;
+    } catch (e) {
+      debugPrint('SupabaseService: getActiveJobCountForPoster $e');
+      return 0;
+    }
+  }
+
+  // Get recent applications for employer dashboard
+  static Future<List<Map<String, dynamic>>> getRecentApplicationsForPoster(
+    String posterId, {
+    int limit = 10,
+  }) async {
+    try {
+      final jobs = await _client
+          .from('jobs')
+          .select('id')
+          .eq('poster_id', posterId);
+      final jobIds = (jobs as List).map((j) => j['id'] as String).toList();
+      if (jobIds.isEmpty) return [];
+
+      final inClause = jobIds.map((id) => "'$id'").join(',');
+      final response = await _client
+          .from('applications')
+          .select('''
+            id,
+            created_at,
+            status,
+            job_id,
+            user_id,
+            jobs (
+              id,
+              title
+            ),
+            profiles:user_id (
+              id,
+              full_name,
+              job_title
+            )
+          ''')
+          .filter('job_id', 'in', '($inClause)')
+          .order('created_at', ascending: false)
+          .limit(limit);
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      debugPrint('SupabaseService: getRecentApplicationsForPoster $e');
+      return [];
+    }
+  }
+
   // Upload a company logo to Supabase storage and return public URL
   static Future<String?> uploadCompanyLogo({
     required String posterId,

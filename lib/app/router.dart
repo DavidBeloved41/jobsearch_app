@@ -8,7 +8,7 @@ import '../features/auth/screens/login_screen.dart';
 import '../features/auth/screens/reset_password_confirmation_screen.dart';
 import '../features/auth/screens/signup_screen.dart';
 import '../features/auth/screens/splash_screen.dart';
-import '../features/employer/screens/employer_profile_screen.dart';
+import '../features/employer/screens/employer_dashboard_screen.dart';
 import '../features/jobs/screens/home_screen.dart';
 
 class AppRoutes {
@@ -151,7 +151,7 @@ GoRouter createRouter({String initialLocation = AppRoutes.login}) {
       ),
       GoRoute(
         path: AppRoutes.employerDashboard,
-        builder: (context, state) => const EmployerProfileScreen(),
+        builder: (context, state) => const EmployerDashboardScreen(),
       ),
       GoRoute(
         path: AppRoutes.resetPassword,
