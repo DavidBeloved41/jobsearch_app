@@ -64,7 +64,6 @@ class AuthNotifier extends ChangeNotifier {
       if (profile == null) {
         await SupabaseService.createProfile(
           user.id,
-          email: user.email,
           fullName: user.userMetadata?['full_name'] as String?,
           accountType: rawRoleFromMetadata,
         );
@@ -123,7 +122,6 @@ class AuthNotifier extends ChangeNotifier {
     if (profile == null) {
       await SupabaseService.createProfile(
         user.id,
-        email: user.email,
         fullName: user.userMetadata?['full_name'] as String?,
         accountType: normalizedRole,
       );

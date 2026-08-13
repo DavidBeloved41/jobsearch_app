@@ -515,9 +515,9 @@ class SupabaseService {
   }
 
   // Create user profile (called during signup or if missing)
+  // Note: Email is NOT stored in profiles table - it's available from auth.users
   static Future<void> createProfile(
     String userId, {
-    String? email,
     String? fullName,
     String? accountType,
   }) async {
@@ -529,7 +529,6 @@ class SupabaseService {
 
       await _client.from('profiles').insert({
         'id': userId,
-        if (email != null) 'email': email,
         if (fullName != null) 'full_name': fullName,
         'account_type': normalizedAccountType,
         'created_at': DateTime.now().toIso8601String(),

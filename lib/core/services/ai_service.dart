@@ -102,7 +102,7 @@ Job: ${job['title']}
 Company: ${company?['name'] ?? 'Unknown'}
 Description excerpt: ${(job['description'] as String? ?? '').substring(0, (job['description'] as String? ?? '').length.clamp(0, 800))}
 
-Candidate: ${profile?['full_name']}
+Candidate: ${profile?['full_name'] ?? 'Unknown'}
 Title: ${profile?['job_title']}
 Experience: ${profile?['years_of_experience']} years
 Location: ${profile?['location']}
