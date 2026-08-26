@@ -22,6 +22,7 @@ class AuthState {
   bool get isAuthenticated => session != null && user != null;
   bool get isEmployer => isAuthenticated && role == 'employer';
   bool get isJobSeeker => isAuthenticated && role == 'job_seeker';
+  bool get isAdmin => isAuthenticated && role == 'admin';
   bool get needsRoleSelection =>
       isAuthenticated && (role == null || role == 'unknown');
 }
@@ -39,6 +40,7 @@ class AuthNotifier extends ChangeNotifier {
   bool get isAuthenticated => _state.isAuthenticated;
   bool get isEmployer => _state.isEmployer;
   bool get isJobSeeker => _state.isJobSeeker;
+  bool get isAdmin => _state.isAdmin;
   bool get needsRoleSelection => _state.needsRoleSelection;
   String? get role => _state.role;
   bool get roleKnown => _state.role != null && _state.role != 'unknown';
@@ -64,10 +66,10 @@ class AuthNotifier extends ChangeNotifier {
       if (profile == null) {
         await SupabaseService.createProfile(
           user.id,
+          email: user.email,
           fullName: user.userMetadata?['full_name'] as String?,
           accountType: rawRoleFromMetadata,
         );
-        // No profile yet — set role from auth metadata if available
         role =
             (rawRoleFromMetadata == null || rawRoleFromMetadata.trim().isEmpty)
             ? null
@@ -78,17 +80,23 @@ class AuthNotifier extends ChangeNotifier {
             ? rawRoleFromMetadata
             : rawRole;
 
+        final profileEmail = profile['email'] as String?;
+        if ((profileEmail == null || profileEmail.trim().isEmpty) &&
+            user.email != null &&
+            user.email!.trim().isNotEmpty) {
+          await SupabaseService.updateProfile(user.id, {
+            'email': user.email!.trim(),
+          });
+        }
+
         if (rawRoleToUse == null || rawRoleToUse.trim().isEmpty) {
           role = null;
         } else {
           role = SupabaseService.normalizeAccountType(rawRoleToUse);
-          // Sync profile account_type if profile was missing it but metadata has it
-          if ((rawRole == null || rawRole.trim().isEmpty) &&
-              rawRoleFromMetadata != null &&
-              rawRoleFromMetadata.trim().isNotEmpty) {
-            final normalizedRole = SupabaseService.normalizeAccountType(
-              rawRoleFromMetadata,
-            );
+          final normalizedRole = SupabaseService.normalizeAccountType(
+            rawRoleToUse,
+          );
+          if (rawRole != normalizedRole) {
             await SupabaseService.updateProfile(user.id, {
               'account_type': normalizedRole,
             });
@@ -122,6 +130,7 @@ class AuthNotifier extends ChangeNotifier {
     if (profile == null) {
       await SupabaseService.createProfile(
         user.id,
+        email: user.email,
         fullName: user.userMetadata?['full_name'] as String?,
         accountType: normalizedRole,
       );

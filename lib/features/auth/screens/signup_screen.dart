@@ -67,6 +67,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
         try {
           await SupabaseService.createProfile(
             response.user!.id,
+            email: response.user!.email,
             fullName: _fullNameController.text.trim(),
             accountType: _selectedAccountType,
           );

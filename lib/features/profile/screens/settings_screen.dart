@@ -19,6 +19,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _applicationUpdates = true;
   bool _emailNotifications = true;
   bool _isLoading = true;
+  String _accountType = 'unknown';
 
   // FIX: Added _profileVisibility state (was missing before)
   String _profileVisibility = 'everyone';
@@ -51,6 +52,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
       if (profile != null) {
         setState(() {
+          _accountType = SupabaseService.normalizeAccountType(
+            profile['account_type'],
+          );
           _jobAlerts = profile['notify_job_alerts'] ?? true;
           _messageNotifications = profile['notify_messages'] ?? true;
           _applicationUpdates = profile['notify_application_updates'] ?? true;
@@ -427,7 +431,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       final userId = Supabase.instance.client.auth.currentUser!.id;
       final profile = await SupabaseService.getProfile(userId);
       final applications = await SupabaseService.getApplications(userId);
-      final savedJobs = await SupabaseService.getSavedJobs(userId);
+      final savedJobs = _accountType == 'job_seeker'
+          ? await SupabaseService.getSavedJobs(userId)
+          : <Map<String, dynamic>>[];
 
       if (mounted) {
         showModalBottomSheet(
@@ -470,7 +476,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     label: 'Applications',
                     value: '${applications.length}',
                   ),
-                  _DataRow(label: 'Saved Jobs', value: '${savedJobs.length}'),
+                  if (_accountType == 'job_seeker')
+                    _DataRow(label: 'Saved Jobs', value: '${savedJobs.length}'),
                   _DataRow(
                     label: 'Exported at',
                     value: DateTime.now().toString().substring(0, 16),
@@ -539,7 +546,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDarkMode = ref.watch(themeProvider) == ThemeMode.dark;
+    final selectedTheme = ref.watch(themeProvider);
+    final isJobSeeker = _accountType == 'job_seeker';
 
     return Scaffold(
       backgroundColor: AppColors.bg(context),
@@ -557,16 +565,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     color: AppColors.surf(context),
                     child: Column(
                       children: [
-                        _SwitchTile(
-                          icon: Icons.work_outline,
-                          label: 'Job alerts',
-                          subtitle: 'Get notified about high match jobs',
-                          value: _jobAlerts,
-                          onChanged: (value) {
-                            setState(() => _jobAlerts = value);
-                            _saveSetting('notify_job_alerts', value);
-                          },
-                        ),
+                        if (isJobSeeker)
+                          _SwitchTile(
+                            icon: Icons.work_outline,
+                            label: 'Job alerts',
+                            subtitle: 'Get notified about high match jobs',
+                            value: _jobAlerts,
+                            onChanged: (value) {
+                              setState(() => _jobAlerts = value);
+                              _saveSetting('notify_job_alerts', value);
+                            },
+                          ),
+                        if (!isJobSeeker)
+                          _SwitchTile(
+                            icon: Icons.assignment_outlined,
+                            label: 'New application notifications',
+                            subtitle: 'Get notified when candidates apply',
+                            value: _applicationUpdates,
+                            onChanged: (value) {
+                              setState(() => _applicationUpdates = value);
+                              _saveSetting('notify_application_updates', value);
+                            },
+                          ),
                         _Divider(),
                         _SwitchTile(
                           icon: Icons.chat_bubble_outline,
@@ -578,17 +598,33 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             _saveSetting('notify_messages', value);
                           },
                         ),
-                        _Divider(),
-                        _SwitchTile(
-                          icon: Icons.assignment_outlined,
-                          label: 'Application updates',
-                          subtitle: 'Get notified about your applications',
-                          value: _applicationUpdates,
-                          onChanged: (value) {
-                            setState(() => _applicationUpdates = value);
-                            _saveSetting('notify_application_updates', value);
-                          },
-                        ),
+                        if (isJobSeeker) ...[
+                          _Divider(),
+                          _SwitchTile(
+                            icon: Icons.assignment_outlined,
+                            label: 'Application updates',
+                            subtitle: 'Get notified about your applications',
+                            value: _applicationUpdates,
+                            onChanged: (value) {
+                              setState(() => _applicationUpdates = value);
+                              _saveSetting('notify_application_updates', value);
+                            },
+                          ),
+                        ],
+                        if (!isJobSeeker) ...[
+                          _Divider(),
+                          _SwitchTile(
+                            icon: Icons.work_outline,
+                            label: 'Job status notifications',
+                            subtitle:
+                                'Get updates about job status and moderation',
+                            value: _jobAlerts,
+                            onChanged: (value) {
+                              setState(() => _jobAlerts = value);
+                              _saveSetting('notify_job_alerts', value);
+                            },
+                          ),
+                        ],
                         _Divider(),
                         _SwitchTile(
                           icon: Icons.email_outlined,
@@ -607,39 +643,65 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   const _SectionHeader(label: 'Appearance'),
                   Container(
                     color: AppColors.surf(context),
-                    child: _SwitchTile(
-                      icon: Icons.dark_mode_outlined,
-                      label: 'Dark mode',
-                      subtitle: 'Switch to dark theme',
-                      value: isDarkMode,
-                      onChanged: (value) {
-                        ref.read(themeProvider.notifier).toggleTheme(value);
-                      },
+                    child: ListTile(
+                      leading: const Icon(Icons.dark_mode_outlined),
+                      title: const Text('Theme'),
+                      subtitle: Text(
+                        selectedTheme == ThemeMode.dark
+                            ? 'Dark'
+                            : selectedTheme == ThemeMode.light
+                            ? 'Light'
+                            : 'System',
+                      ),
+                      trailing: DropdownButton<ThemeMode>(
+                        value: selectedTheme,
+                        underline: const SizedBox.shrink(),
+                        items: const [
+                          DropdownMenuItem(
+                            value: ThemeMode.system,
+                            child: Text('System'),
+                          ),
+                          DropdownMenuItem(
+                            value: ThemeMode.light,
+                            child: Text('Light'),
+                          ),
+                          DropdownMenuItem(
+                            value: ThemeMode.dark,
+                            child: Text('Dark'),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          if (value != null) {
+                            ref.read(themeProvider.notifier).setTheme(value);
+                          }
+                        },
+                      ),
                     ),
                   ),
 
-                  const _SectionHeader(label: 'Privacy'),
-                  Container(
-                    color: AppColors.surf(context),
-                    child: Column(
-                      children: [
-                        // FIX: subtitle now shows current saved visibility
-                        _TapTile(
-                          icon: Icons.visibility_outlined,
-                          label: 'Profile visibility',
-                          subtitle: 'Currently visible to: $_visibilityLabel',
-                          onTap: _showProfileVisibilityDialog,
-                        ),
-                        _Divider(),
-                        _TapTile(
-                          icon: Icons.block_outlined,
-                          label: 'Blocked users',
-                          subtitle: 'Manage blocked accounts',
-                          onTap: _showBlockedUsersDialog,
-                        ),
-                      ],
+                  if (isJobSeeker) ...[
+                    const _SectionHeader(label: 'Privacy'),
+                    Container(
+                      color: AppColors.surf(context),
+                      child: Column(
+                        children: [
+                          _TapTile(
+                            icon: Icons.visibility_outlined,
+                            label: 'Profile visibility',
+                            subtitle: 'Currently visible to: $_visibilityLabel',
+                            onTap: _showProfileVisibilityDialog,
+                          ),
+                          _Divider(),
+                          _TapTile(
+                            icon: Icons.block_outlined,
+                            label: 'Blocked users',
+                            subtitle: 'Manage blocked accounts',
+                            onTap: _showBlockedUsersDialog,
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
+                  ],
 
                   const _SectionHeader(label: 'Account'),
                   Container(

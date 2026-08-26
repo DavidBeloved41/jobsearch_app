@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../app/router.dart';
 import '../../../core/supabase/supabase_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../screens/post_job_screen.dart';
 import '../screens/my_jobs_screen.dart';
 import '../../messages/screens/messages_screen.dart';
-import '../../profile/screens/profile_screen.dart';
 
 class EmployerDashboardScreen extends StatefulWidget {
   const EmployerDashboardScreen({super.key});
@@ -16,8 +17,8 @@ class EmployerDashboardScreen extends StatefulWidget {
 }
 
 class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
-  String? _fullName;
   String? _companyName;
+  String? _companyLogoUrl;
   int _jobsPosted = 0;
   int _totalApplicants = 0;
   int _activeJobs = 0;
@@ -40,12 +41,14 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
     }
 
     try {
-      final profile = await SupabaseService.getProfile(userId);
+      final company = await SupabaseService.getEmployerProfile(userId);
       final jobs = await SupabaseService.getJobsByPoster(userId);
-      final applicantCount =
-          await SupabaseService.getApplicantCountForPoster(userId);
-      final activeJobCount =
-          await SupabaseService.getActiveJobCountForPoster(userId);
+      final applicantCount = await SupabaseService.getApplicantCountForPoster(
+        userId,
+      );
+      final activeJobCount = await SupabaseService.getActiveJobCountForPoster(
+        userId,
+      );
       final recentApps = await SupabaseService.getRecentApplicationsForPoster(
         userId,
         limit: 5,
@@ -53,8 +56,8 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
 
       if (mounted) {
         setState(() {
-          _fullName = profile?['full_name'] as String?;
-          _companyName = profile?['company_name'] as String?;
+          _companyName = company?['company_name'] as String?;
+          _companyLogoUrl = company?['logo_url'] as String?;
           _jobsPosted = jobs.length;
           _totalApplicants = applicantCount;
           _activeJobs = activeJobCount;
@@ -136,9 +139,7 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
           bottomLeft: Radius.circular(16),
           bottomRight: Radius.circular(16),
         ),
-        border: Border(
-          bottom: BorderSide(color: AppColors.bord(context)),
-        ),
+        border: Border(bottom: BorderSide(color: AppColors.bord(context))),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -149,50 +150,49 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Welcome back,',
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: AppColors.textSec(context),
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
                   Row(
                     children: [
-                      Text(
-                        _fullName ?? 'Employer',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.text(context),
+                      CircleAvatar(
+                        radius: 28,
+                        backgroundColor: AppColors.primary.withValues(
+                          alpha: 0.1,
                         ),
+                        backgroundImage: _companyLogoUrl != null
+                            ? NetworkImage(_companyLogoUrl!)
+                            : null,
+                        child: _companyLogoUrl == null
+                            ? const Icon(
+                                Icons.business_outlined,
+                                color: AppColors.primary,
+                              )
+                            : null,
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '👋',
-                        style: TextStyle(fontSize: 20),
+                      const SizedBox(width: 12),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _companyName?.trim().isNotEmpty == true
+                                ? _companyName!
+                                : 'Complete your company profile',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.text(context),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Employer Dashboard',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: AppColors.textSec(context),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      'Employer',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.primary,
-                      ),
-                    ),
                   ),
                 ],
               ),
@@ -229,7 +229,7 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
           Icon(
             Icons.assignment_outlined,
             size: 48,
-            color: AppColors.primary.withOpacity(0.5),
+            color: AppColors.primary.withValues(alpha: 0.5),
           ),
           const SizedBox(height: 16),
           Text(
@@ -244,29 +244,19 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
           Text(
             'Create your first job posting to start attracting candidates',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 14,
-              color: AppColors.textSec(context),
-            ),
+            style: TextStyle(fontSize: 14, color: AppColors.textSec(context)),
           ),
           const SizedBox(height: 20),
           ElevatedButton.icon(
             onPressed: () => Navigator.of(context)
-                .push(
-                  MaterialPageRoute(
-                    builder: (_) => const PostJobScreen(),
-                  ),
-                )
+                .push(MaterialPageRoute(builder: (_) => const PostJobScreen()))
                 .then((_) => _loadDashboardData()),
             icon: const Icon(Icons.add),
             label: const Text('Post Your First Job'),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
               foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(
-                horizontal: 24,
-                vertical: 12,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
               ),
@@ -295,11 +285,11 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
                 width: 56,
                 height: 56,
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.1),
+                  color: AppColors.primary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Center(
-                  child: Icon(
+                child: const Center(
+                  child: const Icon(
                     Icons.business_outlined,
                     size: 28,
                     color: AppColors.primary,
@@ -336,16 +326,14 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
           ),
           const SizedBox(height: 16),
           TextButton(
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const ProfileScreen()),
-            ),
+            onPressed: () => context.push(AppRoutes.employerCompanyProfile),
             style: TextButton.styleFrom(
               padding: EdgeInsets.zero,
               alignment: Alignment.centerLeft,
             ),
-            child: Text(
+            child: const Text(
               'View company profile',
-              style: TextStyle(
+              style: const TextStyle(
                 color: AppColors.primary,
                 fontWeight: FontWeight.w600,
               ),
@@ -377,13 +365,12 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
                 setState(() => _selectedTimeFilter = value);
                 // TODO: Filter data by time range when analytics are added
               },
-              itemBuilder: (context) =>
-                  _timeFilters
-                      .map((filter) => PopupMenuItem(
-                        value: filter,
-                        child: Text(filter),
-                      ))
-                      .toList(),
+              itemBuilder: (context) => _timeFilters
+                  .map(
+                    (filter) =>
+                        PopupMenuItem(value: filter, child: Text(filter)),
+                  )
+                  .toList(),
               child: Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 12,
@@ -418,10 +405,7 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
         const SizedBox(height: 12),
         Text(
           'Manage your jobs, applications and connect with talent',
-          style: TextStyle(
-            fontSize: 13,
-            color: AppColors.textSec(context),
-          ),
+          style: TextStyle(fontSize: 13, color: AppColors.textSec(context)),
         ),
         const SizedBox(height: 16),
         GridView.count(
@@ -479,11 +463,7 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Icon(
-            icon,
-            size: 24,
-            color: AppColors.primary,
-          ),
+          Icon(icon, size: 24, color: AppColors.primary),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -529,11 +509,7 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
           title: 'Post a new job',
           subtitle: 'Create a job posting and find the perfect candidate',
           onTap: () => Navigator.of(context)
-              .push(
-                MaterialPageRoute(
-                  builder: (_) => const PostJobScreen(),
-                ),
-              )
+              .push(MaterialPageRoute(builder: (_) => const PostJobScreen()))
               .then((_) => _loadDashboardData()),
         ),
         const SizedBox(height: 12),
@@ -542,9 +518,9 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
           icon: Icons.assignment_outlined,
           title: 'My jobs & applications',
           subtitle: 'Manage your jobs and review applications',
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const MyJobsScreen()),
-          ),
+          onTap: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const MyJobsScreen())),
         ),
         const SizedBox(height: 12),
         _buildActionCard(
@@ -552,9 +528,9 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
           icon: Icons.message_outlined,
           title: 'Messages',
           subtitle: 'Chat with candidates and manage conversations',
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const MessagesScreen()),
-          ),
+          onTap: () => Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => const MessagesScreen())),
         ),
         const SizedBox(height: 12),
         _buildActionCard(
@@ -562,9 +538,15 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
           icon: Icons.person_outline,
           title: 'Company profile',
           subtitle: 'Update your company information and settings',
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const ProfileScreen()),
-          ),
+          onTap: () => context.push(AppRoutes.employerCompanyProfile),
+        ),
+        const SizedBox(height: 12),
+        _buildActionCard(
+          context,
+          icon: Icons.settings_outlined,
+          title: 'Settings',
+          subtitle: 'Manage appearance, notifications and account security',
+          onTap: () => context.push(AppRoutes.employerSettings),
         ),
       ],
     );
@@ -593,7 +575,7 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.1),
+                color: AppColors.primary.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(icon, size: 22, color: AppColors.primary),
@@ -622,10 +604,7 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
                 ],
               ),
             ),
-            Icon(
-              Icons.chevron_right,
-              color: AppColors.textSec(context),
-            ),
+            Icon(Icons.chevron_right, color: AppColors.textSec(context)),
           ],
         ),
       ),
@@ -672,7 +651,9 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
               }
 
               final status = app['status'] as String? ?? 'applied';
-              final createdAt = DateTime.tryParse(app['created_at'] as String? ?? '');
+              final createdAt = DateTime.tryParse(
+                app['created_at'] as String? ?? '',
+              );
 
               return Padding(
                 padding: const EdgeInsets.all(16),
@@ -682,10 +663,10 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
                       width: 40,
                       height: 40,
                       decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.1),
+                        color: AppColors.primary.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Icon(
+                      child: const Icon(
                         Icons.person_add_outlined,
                         size: 20,
                         color: AppColors.primary,
@@ -725,7 +706,7 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: _getStatusColor(status).withOpacity(0.1),
+                        color: _getStatusColor(status).withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(

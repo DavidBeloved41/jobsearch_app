@@ -21,6 +21,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   final _yearsOfExperienceController = TextEditingController();
   bool _isLoading = false;
   bool _isFetching = true;
+  String _accountType = 'unknown';
   bool _isOpenToWork = true;
   String? _profilePhotoUrl;
   bool _isUploadingPhoto = false;
@@ -65,6 +66,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         _yearsOfExperienceController.text =
             profile['years_of_experience']?.toString() ?? '';
         setState(() {
+          _accountType = SupabaseService.normalizeAccountType(
+            profile['account_type'],
+          );
           _isOpenToWork = profile['is_open_to_work'] ?? true;
           _profilePhotoUrl = profile['profile_photo_url'];
           _preferredWorkModel =
@@ -224,7 +228,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         }
         return;
       }
-      await SupabaseService.updateProfile(userId, {
+      final profileData = <String, dynamic>{
         'full_name': _fullNameController.text.trim(),
         'phone_number': _phoneController.text.trim(),
         'location': _locationController.text.trim(),
@@ -233,15 +237,22 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         'years_of_experience': int.tryParse(
           _yearsOfExperienceController.text.trim(),
         ),
-        'is_open_to_work': _isOpenToWork,
-        'preferred_work_model': _preferredWorkModel,
-        'preferred_employment_type': _preferredEmploymentType,
-        'desired_min_salary':
-            int.tryParse(_desiredMinSalaryController.text.trim()),
-        'desired_max_salary':
-            int.tryParse(_desiredMaxSalaryController.text.trim()),
         'updated_at': DateTime.now().toIso8601String(),
-      });
+      };
+      if (_accountType == 'job_seeker') {
+        profileData.addAll({
+          'is_open_to_work': _isOpenToWork,
+          'preferred_work_model': _preferredWorkModel,
+          'preferred_employment_type': _preferredEmploymentType,
+          'desired_min_salary': int.tryParse(
+            _desiredMinSalaryController.text.trim(),
+          ),
+          'desired_max_salary': int.tryParse(
+            _desiredMaxSalaryController.text.trim(),
+          ),
+        });
+      }
+      await SupabaseService.updateProfile(userId, profileData);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -388,56 +399,58 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     ),
                     const SizedBox(height: 24),
 
-                    // Open to work toggle
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? colorScheme.surface
-                            : colorScheme.surface,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
+                    if (_accountType == 'job_seeker') ...[
+                      // Open to work toggle
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
                           color: isDark
-                              ? colorScheme.outline.withValues(alpha: 0.3)
-                              : colorScheme.outline.withValues(alpha: 0.2),
+                              ? colorScheme.surface
+                              : colorScheme.surface,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: isDark
+                                ? colorScheme.outline.withValues(alpha: 0.3)
+                                : colorScheme.outline.withValues(alpha: 0.2),
+                          ),
                         ),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Open to work',
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                  color: colorScheme.onSurface,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Let recruiters know you\'re available',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: colorScheme.onSurface.withValues(
-                                    alpha: 0.6,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Open to work',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                    color: colorScheme.onSurface,
                                   ),
                                 ),
-                              ),
-                            ],
-                          ),
-                          Switch(
-                            value: _isOpenToWork,
-                            onChanged: (value) =>
-                                setState(() => _isOpenToWork = value),
-                            activeThumbColor: colorScheme.primary,
-                          ),
-                        ],
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Let recruiters know you\'re available',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: colorScheme.onSurface.withValues(
+                                      alpha: 0.6,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Switch(
+                              value: _isOpenToWork,
+                              onChanged: (value) =>
+                                  setState(() => _isOpenToWork = value),
+                              activeThumbColor: colorScheme.primary,
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 20),
+                      const SizedBox(height: 20),
+                    ],
 
                     // Personal Information
                     const _SectionLabel(label: 'Personal Information'),
@@ -539,84 +552,92 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     ),
                     const SizedBox(height: 24),
 
-                    const _SectionLabel(label: 'Job Preferences'),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Preferred work model',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: colorScheme.onSurface.withValues(alpha: 0.6),
+                    if (_accountType == 'job_seeker') ...[
+                      const _SectionLabel(label: 'Job Preferences'),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Preferred work model',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: colorScheme.onSurface.withValues(alpha: 0.6),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      children: [
-                        for (final option in ['all', 'remote', 'hybrid', 'on-site'])
-                          ChoiceChip(
-                            label: Text(option == 'all' ? 'Any' : option),
-                            selected: _preferredWorkModel == option,
-                            onSelected: (_) =>
-                                setState(() => _preferredWorkModel = option),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Preferred employment type',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: colorScheme.onSurface.withValues(alpha: 0.6),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          for (final option in [
+                            'all',
+                            'remote',
+                            'hybrid',
+                            'on-site',
+                          ])
+                            ChoiceChip(
+                              label: Text(option == 'all' ? 'Any' : option),
+                              selected: _preferredWorkModel == option,
+                              onSelected: (_) =>
+                                  setState(() => _preferredWorkModel = option),
+                            ),
+                        ],
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      children: [
-                        for (final option in ['all', 'full-time', 'contract'])
-                          ChoiceChip(
-                            label: Text(option == 'all' ? 'Any' : option),
-                            selected: _preferredEmploymentType == option,
-                            onSelected: (_) =>
-                                setState(() => _preferredEmploymentType = option),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextFormField(
-                            controller: _desiredMinSalaryController,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'Min salary',
-                              prefixText: '\$ ',
+                      const SizedBox(height: 16),
+                      Text(
+                        'Preferred employment type',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: colorScheme.onSurface.withValues(alpha: 0.6),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        children: [
+                          for (final option in ['all', 'full-time', 'contract'])
+                            ChoiceChip(
+                              label: Text(option == 'all' ? 'Any' : option),
+                              selected: _preferredEmploymentType == option,
+                              onSelected: (_) => setState(
+                                () => _preferredEmploymentType = option,
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              controller: _desiredMinSalaryController,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                labelText: 'Min salary',
+                                prefixText: '\$ ',
+                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: TextFormField(
-                            controller: _desiredMaxSalaryController,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'Max salary',
-                              prefixText: '\$ ',
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: TextFormField(
+                              controller: _desiredMaxSalaryController,
+                              keyboardType: TextInputType.number,
+                              decoration: const InputDecoration(
+                                labelText: 'Max salary',
+                                prefixText: '\$ ',
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Used to improve your For You match scores',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: colorScheme.onSurface.withValues(alpha: 0.5),
+                        ],
                       ),
-                    ),
-                    const SizedBox(height: 24),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Used to improve your For You match scores',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: colorScheme.onSurface.withValues(alpha: 0.5),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                    ],
 
                     ElevatedButton(
                       onPressed: _isLoading ? null : _saveProfile,

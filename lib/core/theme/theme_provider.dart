@@ -22,15 +22,21 @@ class ThemeNotifier extends StateNotifier<ThemeMode> {
         state = ThemeMode.dark;
       } else if (saved == 'light') {
         state = ThemeMode.light;
+      } else if (saved == 'system') {
+        state = ThemeMode.system;
       }
     } catch (_) {}
   }
 
   Future<void> toggleTheme(bool isDark) async {
-    state = isDark ? ThemeMode.dark : ThemeMode.light;
+    await setTheme(isDark ? ThemeMode.dark : ThemeMode.light);
+  }
+
+  Future<void> setTheme(ThemeMode mode) async {
+    state = mode;
     try {
       final box = await Hive.openBox(_boxName);
-      await box.put(_themeKey, isDark ? 'dark' : 'light');
+      await box.put(_themeKey, mode.name);
     } catch (_) {}
   }
 

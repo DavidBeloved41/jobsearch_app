@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../app/router.dart';
 import '../../../core/services/biometric_service.dart';
 import '../../../core/supabase/supabase_service.dart';
 import '../../../core/theme/app_colors.dart';
@@ -15,6 +17,7 @@ import 'help_screen.dart';
 import 'career_advice_screen.dart';
 import 'profile_visibility_screen.dart';
 import '../../employer/screens/employer_candidates_screen.dart';
+import '../../employer/screens/employer_company_profile_screen.dart';
 import '../../employer/screens/my_jobs_screen.dart';
 import '../../employer/screens/post_job_screen.dart';
 import 'settings_screen.dart';
@@ -33,7 +36,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   int _offersCount = 0;
   int _jobsPostedCount = 0;
   bool _isOpenToWork = true;
-  String? _accountType = 'candidate';
+  String? _accountType = 'job_seeker';
   String? _companyName;
   String? _profilePhotoUrl; // FIX: track photo URL in state
   String? _fullName; // FIX: load full_name from profiles table too
@@ -57,15 +60,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
     try {
       final userId = user!.id;
       final profile = await SupabaseService.getProfile(userId);
-      final isEmployer = (profile?['account_type'] as String?) == 'employer';
+      final role = SupabaseService.normalizeAccountType(
+        profile?['account_type'],
+      );
 
-      if (isEmployer) {
+      if (role == 'employer') {
         final jobs = await SupabaseService.getJobsByPoster(userId);
         if (mounted) {
           setState(() {
             _jobsPostedCount = jobs.length;
-            _accountType = 'employer';
+            _accountType = role;
             _companyName = profile?['company_name'];
+            _profilePhotoUrl = profile?['profile_photo_url'];
+            _fullName = profile?['full_name'];
+          });
+        }
+        return;
+      }
+
+      if (role != 'job_seeker') {
+        if (mounted) {
+          setState(() {
+            _accountType = role;
             _profilePhotoUrl = profile?['profile_photo_url'];
             _fullName = profile?['full_name'];
           });
@@ -86,7 +102,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               .where((a) => a['status'] == 'offered')
               .length;
           _isOpenToWork = profile?['is_open_to_work'] ?? true;
-          _accountType = profile?['account_type'] as String? ?? 'candidate';
+          _accountType = role;
           _profilePhotoUrl = profile?['profile_photo_url'];
           _fullName = profile?['full_name'];
         });
@@ -190,9 +206,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.settings_outlined),
-            onPressed: () => Navigator.of(
-              context,
-            ).push(MaterialPageRoute(builder: (_) => const SettingsScreen())),
+            onPressed: () => _accountType == 'employer'
+                ? context.push(AppRoutes.employerSettings)
+                : Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                  ),
           ),
         ],
       ),
@@ -249,6 +267,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   Text(
                     _accountType == 'employer'
                         ? 'Employer account'
+                        : _accountType == 'admin'
+                        ? 'Admin account'
                         : 'Job seeker account',
                     style: TextStyle(
                       fontSize: 13,
@@ -340,7 +360,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         _VerticalDivider(),
                         const _StatItem(label: 'Messages', value: '-'),
                       ]
-                    : [
+                    : _accountType == 'job_seeker'
+                    ? [
                         _StatItem(label: 'Applied', value: '$_appliedCount'),
                         _VerticalDivider(),
                         _StatItem(
@@ -349,6 +370,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                         _VerticalDivider(),
                         _StatItem(label: 'Offers', value: '$_offersCount'),
+                      ]
+                    : [
+                        _MenuItem(
+                          icon: Icons.settings_outlined,
+                          label: 'Settings',
+                          onTap: () => context.push(AppRoutes.employerSettings),
+                        ),
                       ],
               ),
             ),
@@ -359,121 +387,160 @@ class _ProfileScreenState extends State<ProfileScreen> {
             Container(
               color: AppColors.surf(context),
               child: Column(
-                children: [
-                  _MenuItem(
-                    icon: Icons.person_outlined,
-                    label: 'Edit profile',
-                    // FIX: reload stats (including photo) when returning
-                    onTap: () => Navigator.of(context)
-                        .push(
-                          MaterialPageRoute(
-                            builder: (_) => const EditProfileScreen(),
+                children: _accountType == 'employer'
+                    ? [
+                        _MenuItem(
+                          icon: Icons.person_outlined,
+                          label: 'Edit company profile',
+                          onTap: () => Navigator.of(context)
+                              .push(
+                                MaterialPageRoute(
+                                  builder: (_) =>
+                                      const EmployerCompanyProfileScreen(),
+                                ),
+                              )
+                              .then((_) => _loadStats()),
+                        ),
+                        _MenuItem(
+                          icon: Icons.post_add_outlined,
+                          label: 'Post a job',
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const PostJobScreen(),
+                            ),
                           ),
-                        )
-                        .then((_) => _loadStats()),
-                  ),
-                  _MenuItem(
-                    icon: Icons.description_outlined,
-                    label: 'My resume',
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const ResumeScreen()),
-                    ),
-                  ),
-                  _MenuItem(
-                    icon: Icons.school_outlined,
-                    label: 'Skills & experience',
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const SkillsScreen()),
-                    ),
-                  ),
-                  _MenuItem(
-                    icon: Icons.insights_outlined,
-                    label: 'Skill gap analysis',
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const SkillGapScreen()),
-                    ),
-                  ),
-                  _MenuItem(
-                    icon: Icons.bookmark_outlined,
-                    label: 'Saved jobs',
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const SavedJobsScreen(),
-                      ),
-                    ),
-                  ),
-                  _MenuItem(
-                    icon: Icons.notifications_outlined,
-                    label: 'Notifications',
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const NotificationsScreen(),
-                      ),
-                    ),
-                  ),
-                  _MenuItem(
-                    icon: Icons.visibility_outlined,
-                    label: 'Profile visibility',
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const ProfileVisibilityScreen(),
-                      ),
-                    ),
-                  ),
-                  if (_accountType == 'employer') ...[
-                    _MenuItem(
-                      icon: Icons.post_add_outlined,
-                      label: 'Post a job',
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const PostJobScreen(),
                         ),
-                      ),
-                    ),
-                    _MenuItem(
-                      icon: Icons.work_outline,
-                      label: 'My postings',
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const MyJobsScreen()),
-                      ),
-                    ),
-                    _MenuItem(
-                      icon: Icons.people_outline,
-                      label: 'Browse candidates',
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const EmployerCandidatesScreen(),
+                        _MenuItem(
+                          icon: Icons.work_outline,
+                          label: 'My jobs',
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const MyJobsScreen(),
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                  ] else ...[
-                    _MenuItem(
-                      icon: Icons.post_add_outlined,
-                      label: 'Browse jobs',
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => const CareerAdviceScreen(),
+                        _MenuItem(
+                          icon: Icons.people_outline,
+                          label: 'Browse candidates',
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const EmployerCandidatesScreen(),
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                  ],
-                  _MenuItem(
-                    icon: Icons.menu_book_outlined,
-                    label: 'Career advice',
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const CareerAdviceScreen(),
-                      ),
-                    ),
-                  ),
-                  _MenuItem(
-                    icon: Icons.help_outline,
-                    label: 'Help & support',
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const HelpScreen()),
-                    ),
-                  ),
-                ],
+                        _MenuItem(
+                          icon: Icons.notifications_outlined,
+                          label: 'Notifications',
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const NotificationsScreen(),
+                            ),
+                          ),
+                        ),
+                        _MenuItem(
+                          icon: Icons.settings_outlined,
+                          label: 'Settings',
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const SettingsScreen(),
+                            ),
+                          ),
+                        ),
+                      ]
+                    : [
+                        _MenuItem(
+                          icon: Icons.person_outlined,
+                          label: 'Edit profile',
+                          onTap: () => Navigator.of(context)
+                              .push(
+                                MaterialPageRoute(
+                                  builder: (_) => const EditProfileScreen(),
+                                ),
+                              )
+                              .then((_) => _loadStats()),
+                        ),
+                        _MenuItem(
+                          icon: Icons.description_outlined,
+                          label: 'My resume',
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const ResumeScreen(),
+                            ),
+                          ),
+                        ),
+                        _MenuItem(
+                          icon: Icons.school_outlined,
+                          label: 'Skills & experience',
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const SkillsScreen(),
+                            ),
+                          ),
+                        ),
+                        _MenuItem(
+                          icon: Icons.insights_outlined,
+                          label: 'Skill gap analysis',
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const SkillGapScreen(),
+                            ),
+                          ),
+                        ),
+                        _MenuItem(
+                          icon: Icons.bookmark_outlined,
+                          label: 'Saved jobs',
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const SavedJobsScreen(),
+                            ),
+                          ),
+                        ),
+                        _MenuItem(
+                          icon: Icons.notifications_outlined,
+                          label: 'Notifications',
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const NotificationsScreen(),
+                            ),
+                          ),
+                        ),
+                        _MenuItem(
+                          icon: Icons.visibility_outlined,
+                          label: 'Profile visibility',
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const ProfileVisibilityScreen(),
+                            ),
+                          ),
+                        ),
+                        _MenuItem(
+                          icon: Icons.post_add_outlined,
+                          label: 'Browse jobs',
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const CareerAdviceScreen(),
+                            ),
+                          ),
+                        ),
+                        _MenuItem(
+                          icon: Icons.menu_book_outlined,
+                          label: 'Career advice',
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const CareerAdviceScreen(),
+                            ),
+                          ),
+                        ),
+                        _MenuItem(
+                          icon: Icons.help_outline,
+                          label: 'Help & support',
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const HelpScreen(),
+                            ),
+                          ),
+                        ),
+                      ],
               ),
             ),
 

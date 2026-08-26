@@ -102,6 +102,11 @@ class SupabaseService {
           'SupabaseService.getRoleRoute: User $userId is employer, routing to employer dashboard',
         );
         return AppRoutes.employerDashboard;
+      case 'admin':
+        debugPrint(
+          'SupabaseService.getRoleRoute: User $userId is admin, routing to admin dashboard',
+        );
+        return AppRoutes.adminDashboard;
       case 'job_seeker':
       case 'unknown':
         debugPrint(
@@ -514,10 +519,45 @@ class SupabaseService {
     return response;
   }
 
-  // Create user profile (called during signup or if missing)
-  // Note: Email is NOT stored in profiles table - it's available from auth.users
+  static Future<Map<String, dynamic>?> getEmployerProfile(String userId) async {
+    final response = await _client
+        .from('employer_profiles')
+        .select()
+        .eq('user_id', userId)
+        .maybeSingle();
+    return response;
+  }
+
+  static Future<Map<String, dynamic>> createEmployerProfile(
+    String userId,
+    Map<String, dynamic> data,
+  ) async {
+    final response = await _client
+        .from('employer_profiles')
+        .insert({'user_id': userId, ...data})
+        .select()
+        .single();
+    return Map<String, dynamic>.from(response);
+  }
+
+  static Future<Map<String, dynamic>> updateEmployerProfile(
+    String userId,
+    Map<String, dynamic> data,
+  ) async {
+    final response = await _client
+        .from('employer_profiles')
+        .upsert({'user_id': userId, ...data}, onConflict: 'user_id')
+        .select()
+        .single();
+    return Map<String, dynamic>.from(response);
+  }
+
+  // Create user profile (called during signup or if missing).
+  // Keep the profile role normalized to the app's supported values and
+  // persist the auth email so the profile row stays in sync with auth.users.
   static Future<void> createProfile(
     String userId, {
+    String? email,
     String? fullName,
     String? accountType,
   }) async {
@@ -525,11 +565,14 @@ class SupabaseService {
     try {
       final normalizedAccountType = accountType != null
           ? normalizeAccountType(accountType)
-          : 'job_seeker'; // Default to job_seeker if not specified
+          : 'job_seeker';
+      final normalizedEmail = (email ?? '').trim();
 
       await _client.from('profiles').insert({
         'id': userId,
-        if (fullName != null) 'full_name': fullName,
+        if (normalizedEmail.isNotEmpty) 'email': normalizedEmail,
+        if (fullName != null && fullName.trim().isNotEmpty)
+          'full_name': fullName.trim(),
         'account_type': normalizedAccountType,
         'created_at': DateTime.now().toIso8601String(),
         'is_open_to_work': true,
@@ -541,7 +584,10 @@ class SupabaseService {
       debugPrint(
         'SupabaseService: Error creating profile for user $userId: $e',
       );
-      // Propagate the error so caller knows profile creation failed
+      // Auth refresh and signup can race; an existing row means the profile
+      // was created successfully by the other path.
+      final existingProfile = await getProfile(userId);
+      if (existingProfile != null) return;
       rethrow;
     }
   }
@@ -552,9 +598,17 @@ class SupabaseService {
     Map<String, dynamic> data,
   ) async {
     try {
+      final sanitizedData = <String, dynamic>{...data};
+
+      if (sanitizedData.containsKey('account_type')) {
+        sanitizedData['account_type'] = normalizeAccountType(
+          sanitizedData['account_type'],
+        );
+      }
+
       final response = await _client
           .from('profiles')
-          .update(data)
+          .update(sanitizedData)
           .eq('id', userId)
           .select();
       final rows = response as List<dynamic>?;
@@ -562,11 +616,17 @@ class SupabaseService {
         debugPrint(
           'SupabaseService: updateProfile found no profile, creating one',
         );
-        await createProfile(userId);
+        await createProfile(
+          userId,
+          email: _client.auth.currentUser?.email,
+          fullName:
+              _client.auth.currentUser?.userMetadata?['full_name'] as String?,
+          accountType: sanitizedData['account_type'] ?? 'job_seeker',
+        );
       }
     } catch (e) {
       debugPrint('SupabaseService: updateProfile error=$e');
-      await createProfile(userId);
+      rethrow;
     }
   }
 
