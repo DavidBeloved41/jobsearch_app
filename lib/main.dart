@@ -13,8 +13,7 @@ import 'core/theme/theme_provider.dart';
 bool _isPasswordRecoveryLink(Uri uri) {
   return uri.path == AppRoutes.resetPassword ||
       uri.host == 'reset-password' ||
-      uri.queryParameters['type'] == 'recovery' ||
-      uri.path.contains('/auth/v1/verify');
+      uri.queryParameters['type'] == 'recovery';
 }
 
 Future<void> main() async {
@@ -47,9 +46,9 @@ Future<void> main() async {
       if (_isPasswordRecoveryLink(initialLink)) {
         authNotifier.setPasswordRecoveryFromLink(initialLink);
         routerInitialLocation = AppRoutes.resetPassword;
+        await Supabase.instance.client.auth.getSessionFromUrl(initialLink);
+        debugPrint('Password recovery session processed from URL');
       }
-      await Supabase.instance.client.auth.getSessionFromUrl(initialLink);
-      debugPrint('Session processed from URL');
     }
   } catch (e) {
     debugPrint('Error handling initial link: $e');
@@ -63,9 +62,9 @@ Future<void> main() async {
       if (link != null) {
         if (_isPasswordRecoveryLink(link)) {
           authNotifier.setPasswordRecoveryFromLink(link);
+          await Supabase.instance.client.auth.getSessionFromUrl(link);
           appRouter.go(AppRoutes.resetPassword);
         }
-        await Supabase.instance.client.auth.getSessionFromUrl(link);
       }
     },
     onError: (err) {

@@ -22,14 +22,20 @@ create index if not exists employer_profiles_user_id_idx
 
 alter table public.employer_profiles enable row level security;
 
+drop policy if exists "Employers can view their company profile"
+  on public.employer_profiles;
 create policy "Employers can view their company profile"
   on public.employer_profiles for select
   using (auth.uid() = user_id);
 
+drop policy if exists "Employers can create their company profile"
+  on public.employer_profiles;
 create policy "Employers can create their company profile"
   on public.employer_profiles for insert
   with check (auth.uid() = user_id);
 
+drop policy if exists "Employers can update their company profile"
+  on public.employer_profiles;
 create policy "Employers can update their company profile"
   on public.employer_profiles for update
   using (auth.uid() = user_id)

@@ -35,6 +35,13 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
         return;
       }
 
+      if (!SupabaseService.isEmailConfirmed(currentUser)) {
+        debugPrint('Splash: current user email is not confirmed; signing out');
+        await Supabase.instance.client.auth.signOut();
+        if (mounted) GoRouter.of(context).go(AppRoutes.login);
+        return;
+      }
+
       // Active session exists — resolve profile/role and route accordingly
       final destination = await SupabaseService.getRoleRoute(currentUser.id);
       if (!mounted) return;

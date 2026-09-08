@@ -40,8 +40,7 @@ class MatchProfileContext {
       yearsExperience: years,
       location: profile['location'] as String?,
       jobTitle: profile['job_title'] as String?,
-      preferredWorkModel:
-          profile['preferred_work_model'] as String? ?? 'all',
+      preferredWorkModel: profile['preferred_work_model'] as String? ?? 'all',
       preferredEmploymentType:
           profile['preferred_employment_type'] as String? ?? 'all',
       desiredMinSalary: minRaw is num

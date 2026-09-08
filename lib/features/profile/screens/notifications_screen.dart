@@ -1,6 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:go_router/go_router.dart';
+import '../../../app/router.dart';
+import '../../../core/supabase/supabase_service.dart';
+import '../../jobs/screens/job_detail_screen.dart';
+import '../../messages/screens/chat_screen.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/app_feedback.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -12,11 +18,37 @@ class NotificationsScreen extends StatefulWidget {
 class _NotificationsScreenState extends State<NotificationsScreen> {
   List<Map<String, dynamic>> _notifications = [];
   bool _isLoading = true;
+  String? _error;
+  RealtimeChannel? _notificationChannel;
 
   @override
   void initState() {
     super.initState();
     _loadNotifications();
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId != null) {
+      _notificationChannel = Supabase.instance.client
+          .channel('notifications_$userId')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'notifications',
+            callback: (payload) {
+              final record = payload.newRecord;
+              if (record['user_id'] == userId) _loadNotifications();
+            },
+          )
+          .subscribe();
+    }
+  }
+
+  @override
+  void dispose() {
+    final channel = _notificationChannel;
+    if (channel != null) {
+      Supabase.instance.client.removeChannel(channel);
+    }
+    super.dispose();
   }
 
   Future<void> _loadNotifications() async {
@@ -24,7 +56,9 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     try {
       final userId = Supabase.instance.client.auth.currentUser?.id;
       if (userId == null) {
-        setState(() => _isLoading = false);
+        setState(() {
+          _isLoading = false;
+        });
         debugPrint('No user ID available for loading notifications');
         return;
       }
@@ -36,10 +70,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       setState(() {
         _notifications = List<Map<String, dynamic>>.from(notifications);
         _isLoading = false;
+        _error = null;
       });
     } catch (e) {
-      setState(() => _isLoading = false);
       debugPrint('Error loading notifications: $e');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _error = 'Could not load notifications. Please try again.';
+        });
+      }
     }
   }
 
@@ -48,7 +88,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       await Supabase.instance.client
           .from('notifications')
           .update({'is_read': true})
-          .eq('id', notificationId);
+          .eq('id', notificationId)
+          .eq('user_id', Supabase.instance.client.auth.currentUser?.id ?? '');
       await _loadNotifications();
     } catch (e) {
       debugPrint('Error marking notification as read: $e');
@@ -72,9 +113,58 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
   }
 
+  Future<void> _openNotification(Map<String, dynamic> notification) async {
+    final id = notification['id']?.toString();
+    if (id != null) await _markAsRead(id);
+    if (!mounted) return;
+    final type = notification['type']?.toString();
+    final referenceId = notification['reference_id']?.toString();
+    if (referenceId == null || referenceId.isEmpty) return;
+    if (type == 'job_alert') {
+      try {
+        final job = await SupabaseService.getJobById(referenceId);
+        if (job != null && mounted) {
+          await Navigator.of(
+            context,
+          ).push(MaterialPageRoute(builder: (_) => JobDetailScreen(job: job)));
+        }
+      } catch (e) {
+        debugPrint('Notification job navigation failed: $e');
+      }
+    } else if (type == 'new_message') {
+      try {
+        final message = await Supabase.instance.client
+            .from('messages')
+            .select('sender_id, receiver_id')
+            .eq('id', referenceId)
+            .maybeSingle();
+        final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+        final senderId = message?['sender_id']?.toString();
+        final receiverId = message?['receiver_id']?.toString();
+        final partnerId = senderId == currentUserId ? receiverId : senderId;
+        if (partnerId != null && partnerId.isNotEmpty && mounted) {
+          await Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => ChatScreen(
+                receiverId: partnerId,
+                receiverName: 'Conversation',
+                receiverRole: '',
+              ),
+            ),
+          );
+        }
+      } catch (e) {
+        debugPrint('Notification message navigation failed: $e');
+      }
+    } else if (type == 'application_update') {
+      if (mounted) context.go(AppRoutes.home);
+    }
+  }
+
   IconData _getNotificationIcon(String? type) {
     switch (type) {
       case 'job_match':
+      case 'job_alert':
         return Icons.work_outline;
       case 'new_message':
         return Icons.chat_bubble_outline;
@@ -92,6 +182,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Color _getNotificationColor(String? type) {
     switch (type) {
       case 'job_match':
+      case 'job_alert':
         return AppColors.primary;
       case 'new_message':
         return AppColors.success;
@@ -145,33 +236,26 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 color: Theme.of(context).colorScheme.primary,
               ),
             )
-          : _notifications.isEmpty
+          : _error != null
           ? Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
-                    Icons.notifications_none_outlined,
-                    size: 64,
-                    color: AppColors.textSec(context),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No notifications yet',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.text(context),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'You\'ll be notified about job matches\nand application updates',
-                    style: TextStyle(color: AppColors.textSec(context)),
-                    textAlign: TextAlign.center,
+                  Text(_error!),
+                  const SizedBox(height: 12),
+                  ElevatedButton.icon(
+                    onPressed: _loadNotifications,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Retry'),
                   ),
                 ],
               ),
+            )
+          : _notifications.isEmpty
+          ? const AppEmptyState(
+              icon: Icons.notifications_none_outlined,
+              title: 'No notifications yet',
+              message: 'Job matches and application updates will appear here.',
             )
           : RefreshIndicator(
               onRefresh: _loadNotifications,
@@ -184,7 +268,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   final color = _getNotificationColor(type);
 
                   return InkWell(
-                    onTap: () => _markAsRead(notification['id']),
+                    onTap: () => _openNotification(notification),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,

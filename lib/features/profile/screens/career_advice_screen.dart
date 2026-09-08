@@ -38,8 +38,7 @@ class _CareerAdviceScreenState extends State<CareerAdviceScreen> {
                   child: FilterChip(
                     label: Text(cat),
                     selected: selected,
-                    onSelected: (_) =>
-                        setState(() => _selectedCategory = cat),
+                    onSelected: (_) => setState(() => _selectedCategory = cat),
                     selectedColor: AppColors.primary.withValues(alpha: 0.15),
                     checkmarkColor: AppColors.primary,
                   ),
@@ -154,10 +153,7 @@ class CareerArticleDetailScreen extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               article.readTime,
-              style: TextStyle(
-                color: AppColors.textSec(context),
-                fontSize: 13,
-              ),
+              style: TextStyle(color: AppColors.textSec(context), fontSize: 13),
             ),
             const SizedBox(height: 20),
             Text(

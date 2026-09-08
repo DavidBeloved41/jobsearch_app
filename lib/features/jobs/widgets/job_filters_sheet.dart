@@ -116,7 +116,10 @@ class _JobFiltersSheetState extends State<JobFiltersSheet> {
                     color: AppColors.text(context),
                   ),
                 ),
-                TextButton(onPressed: _clearAll, child: const Text('Clear all')),
+                TextButton(
+                  onPressed: _clearAll,
+                  child: const Text('Clear all'),
+                ),
               ],
             ),
             const SizedBox(height: 16),
@@ -136,8 +139,9 @@ class _JobFiltersSheetState extends State<JobFiltersSheet> {
                   ChoiceChip(
                     label: Text(option == 'all' ? 'Any' : option),
                     selected: _filters.workModel == option,
-                    onSelected: (_) =>
-                        setState(() => _filters = _filters.copyWith(workModel: option)),
+                    onSelected: (_) => setState(
+                      () => _filters = _filters.copyWith(workModel: option),
+                    ),
                   ),
               ],
             ),
@@ -159,15 +163,15 @@ class _JobFiltersSheetState extends State<JobFiltersSheet> {
                     label: Text(option == 'all' ? 'Any' : option),
                     selected: _filters.employmentType == option,
                     onSelected: (_) => setState(
-                      () => _filters =
-                          _filters.copyWith(employmentType: option),
+                      () =>
+                          _filters = _filters.copyWith(employmentType: option),
                     ),
                   ),
               ],
             ),
             const SizedBox(height: 16),
             Text(
-              'Salary range (USD / year)',
+              'Salary range (GHS / year)',
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
@@ -258,7 +262,10 @@ class _JobFiltersSheetState extends State<JobFiltersSheet> {
               ),
             ),
             const SizedBox(height: 24),
-            ElevatedButton(onPressed: _apply, child: const Text('Apply filters')),
+            ElevatedButton(
+              onPressed: _apply,
+              child: const Text('Apply filters'),
+            ),
           ],
         ),
       ),

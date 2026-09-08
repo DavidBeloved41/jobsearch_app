@@ -42,6 +42,10 @@ dependencies:
   flutter_local_notifications: ^17.2.4
   connectivity_plus: ^6.1.4
   http: ^1.2.2
+  intl: ^0.20.2
+  archive: ^4.0.7
+  syncfusion_flutter_pdf: ^28.2.12
+  xml: ^6.5.0
 
 dev_dependencies:
   flutter_test:
@@ -55,8 +59,8 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - .env
     - assets/logo.png
+    - .env
 
 flutter_native_splash:
   color: "#F5F5F0"

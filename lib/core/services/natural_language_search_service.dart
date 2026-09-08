@@ -81,7 +81,10 @@ class NaturalLanguageSearchService {
       caseSensitive: false,
     ).firstMatch(text);
     if (salaryOverMatch != null) {
-      minSalary = _parseSalary(salaryOverMatch.group(1)!, salaryOverMatch.group(2));
+      minSalary = _parseSalary(
+        salaryOverMatch.group(1)!,
+        salaryOverMatch.group(2),
+      );
       applied.add(salaryOverMatch.group(0)!);
     } else {
       final overMatch = RegExp(
@@ -99,7 +102,10 @@ class NaturalLanguageSearchService {
       caseSensitive: false,
     ).firstMatch(text);
     if (salaryUnderMatch != null) {
-      maxSalary = _parseSalary(salaryUnderMatch.group(1)!, salaryUnderMatch.group(2));
+      maxSalary = _parseSalary(
+        salaryUnderMatch.group(1)!,
+        salaryUnderMatch.group(2),
+      );
       applied.add(salaryUnderMatch.group(0)!);
     }
 
@@ -110,7 +116,10 @@ class NaturalLanguageSearchService {
     if (locationMatch != null) {
       location = locationMatch.group(1)!.trim();
       location = location.replaceAll(
-        RegExp(r'\s+(with|that|where|for|and|or|remote|hybrid).*$', caseSensitive: false),
+        RegExp(
+          r'\s+(with|that|where|for|and|or|remote|hybrid).*$',
+          caseSensitive: false,
+        ),
         '',
       );
       applied.add(locationMatch.group(0)!);
@@ -130,9 +139,13 @@ class NaturalLanguageSearchService {
       caseSensitive: false,
     ).firstMatch(text);
     if (techMatch != null) {
-      techStack = techMatch.group(1)!
+      techStack = techMatch
+          .group(1)!
           .trim()
-          .replaceAll(RegExp(r'\s+(in|with|for|and|or).*$', caseSensitive: false), '');
+          .replaceAll(
+            RegExp(r'\s+(in|with|for|and|or).*$', caseSensitive: false),
+            '',
+          );
       applied.add(techMatch.group(0)!);
     }
 
@@ -141,7 +154,13 @@ class NaturalLanguageSearchService {
       keyword = keyword.replaceAll(fragment, ' ');
     }
     keyword = keyword
-        .replaceAll(RegExp(r'\b(show me|find|search for|looking for|roles?|jobs?|positions?)\b', caseSensitive: false), ' ')
+        .replaceAll(
+          RegExp(
+            r'\b(show me|find|search for|looking for|roles?|jobs?|positions?)\b',
+            caseSensitive: false,
+          ),
+          ' ',
+        )
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
 
@@ -160,7 +179,7 @@ class NaturalLanguageSearchService {
     if (keyword.isNotEmpty) parts.add(keyword);
     if (location.isNotEmpty) parts.add('in $location');
     if (workModel != 'all') parts.add(workModel);
-    if (minSalary != null) parts.add('≥ \$${minSalary ~/ 1000}k');
+    if (minSalary != null) parts.add('≥ GH₵${minSalary ~/ 1000}k');
     if (techStack.isNotEmpty) parts.add('tech: $techStack');
 
     return NaturalLanguageSearchResult(

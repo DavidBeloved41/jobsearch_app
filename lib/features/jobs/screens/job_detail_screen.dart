@@ -1,4 +1,5 @@
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/models/match_profile_context.dart';
@@ -7,9 +8,11 @@ import '../../../core/services/ats_keyword_service.dart';
 import '../../../core/services/easy_apply_service.dart';
 import '../../../core/services/match_score_service.dart';
 import '../../../core/services/offline_cache_service.dart';
+import '../../../core/services/resume_text_service.dart';
 import '../../../core/supabase/supabase_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/company_logo.dart';
+import '../../profile/screens/skill_gap_screen.dart';
 import '../../auth/screens/login_screen.dart';
 import 'company_detail_screen.dart';
 
@@ -32,7 +35,11 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   MatchScoreBreakdown? _matchBreakdown;
   AtsAnalysisResult? _atsResult;
   String? _matchInsight;
+  Map<String, dynamic>? _aiMatchAnalysis;
   bool _loadingInsight = false;
+  Map<String, dynamic>? _matchProfile;
+  List<String> _matchSkills = const [];
+  String? _matchResumeText;
 
   @override
   void initState() {
@@ -46,34 +53,50 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
   Future<void> _loadMatchScore() async {
     final userId = Supabase.instance.client.auth.currentUser?.id;
     if (userId == null) {
-      setState(
-        () => _matchScore = MatchScoreService.calculate(
-          job: widget.job,
-          userSkillNames: [],
-        ),
-      );
+      if (mounted) {
+        setState(() => _matchScore = 0);
+      }
       return;
     }
-    final profile = await SupabaseService.getProfile(userId);
+
+    final userProfile = await SupabaseService.getProfile(userId);
+    final role = SupabaseService.normalizeAccountType(
+      userProfile?['account_type'] ??
+          Supabase
+              .instance
+              .client
+              .auth
+              .currentUser
+              ?.userMetadata?['account_type'],
+    );
+    if (role != 'job_seeker') {
+      if (mounted) {
+        setState(() => _matchScore = 0);
+      }
+      return;
+    }
+    final profile = await SupabaseService.getJobSeekerProfileContext(userId);
     final skills = await SupabaseService.getUserSkillNames(userId);
     final matchContext = MatchProfileContext.fromProfile(profile, skills);
     final yearsRaw = profile?['years_of_experience'];
     final userYears = yearsRaw is num
         ? yearsRaw.toInt()
         : int.tryParse('$yearsRaw') ?? 0;
-
+    final uploadedResumeText = await ResumeTextService.fromProfile(userProfile);
+    final resumeText =
+        uploadedResumeText ?? await OfflineCacheService.getResumeDraft();
     final breakdown = MatchScoreService.calculateDetailed(
       job: widget.job,
       userSkillNames: skills,
       userYearsExperience: userYears,
       profile: matchContext,
+      resumeText: resumeText,
     );
 
-    final draft = await OfflineCacheService.getResumeDraft();
     final ats = AtsKeywordService.analyze(
       job: widget.job,
       userSkillNames: skills,
-      resumeText: draft,
+      resumeText: resumeText,
     );
 
     if (mounted) {
@@ -82,22 +105,26 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
         _matchBreakdown = breakdown;
         _atsResult = ats;
       });
-      _loadMatchInsight(breakdown);
+      _matchProfile = userProfile;
+      _matchSkills = skills;
+      _matchResumeText = resumeText;
     }
   }
 
-  Future<void> _loadMatchInsight(MatchScoreBreakdown breakdown) async {
+  Future<void> _loadMatchInsight() async {
     if (!AiService.isConfigured) return;
     setState(() => _loadingInsight = true);
-    final insight = await AiService.generateMatchInsight(
+    final analysis = await AiService.analyzeJobMatch(
       job: widget.job,
-      matchScore: breakdown.totalScore,
-      matchedSkills: breakdown.matchedSkills,
-      missingSkills: breakdown.missingSkills,
+      profile: _matchProfile,
+      skills: _matchSkills,
+      resumeText: _matchResumeText,
+      deterministicScore: _matchScore,
     );
     if (mounted) {
       setState(() {
-        _matchInsight = insight;
+        _matchInsight = analysis?['match_summary'] as String?;
+        _aiMatchAnalysis = analysis;
         _loadingInsight = false;
       });
     }
@@ -147,8 +174,22 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     }
   }
 
-  Future<String?> _promptCoverLetter() async {
-    final controller = TextEditingController();
+  Future<void> _checkIfExpressedInterest() async {
+    try {
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (userId == null) return;
+      final expressed = await SupabaseService.hasExpressedInterest(
+        userId,
+        widget.job['id'],
+      );
+      if (mounted) setState(() => _hasExpressedInterest = expressed);
+    } catch (e) {
+      debugPrint('Error checking expressed interest: $e');
+    }
+  }
+
+  Future<String?> _promptCoverLetter({String? initialText}) async {
+    final controller = TextEditingController(text: initialText ?? '');
     return showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
@@ -167,10 +208,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () {
-              final text = controller.text.trim();
-              Navigator.pop(context, text.isEmpty ? '' : text);
-            },
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
             child: const Text('Submit'),
           ),
         ],
@@ -185,15 +223,41 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
       return;
     }
 
+    final profile = await SupabaseService.getProfile(user.id);
+    final role = SupabaseService.normalizeAccountType(
+      profile?['account_type'] ?? user.userMetadata?['account_type'],
+    );
+    if (role != 'job_seeker') {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Employers cannot apply for jobs.'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+      return;
+    }
+
     setState(() => _isApplying = true);
     try {
-      final online = await Connectivity().checkConnectivity();
-      final isOnline = !online.contains(ConnectivityResult.none);
-
       final payload = await EasyApplyService.getApplyPayload(
         userId: user.id,
         job: widget.job,
       );
+      final editedCoverLetter = await _promptCoverLetter(
+        initialText: payload['coverLetter'] as String?,
+      );
+      if (editedCoverLetter == null || !mounted) {
+        setState(() => _isApplying = false);
+        return;
+      }
+
+      final online = await Connectivity().checkConnectivity();
+      final isOnline = !online.contains(ConnectivityResult.none);
+      payload['coverLetter'] = editedCoverLetter.isEmpty
+          ? null
+          : editedCoverLetter;
 
       if (!isOnline) {
         await OfflineCacheService.queueApplication(
@@ -224,8 +288,8 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
         widget.job['id'],
         payload['coverLetter'] as String?,
         resumeUrl: payload['resumeUrl'] as String?,
-        profileSnapshot:
-            payload['profileSnapshot'] as Map<String, dynamic>?,
+        matchScore: _matchScore,
+        profileSnapshot: payload['profileSnapshot'] as Map<String, dynamic>?,
       );
 
       if (mounted) {
@@ -241,16 +305,56 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
         );
       }
     } catch (e) {
+      debugPrint(
+        'Easy Apply failed: ${SupabaseService.describeSupabaseError(e)}',
+      );
       if (mounted) {
         setState(() => _isApplying = false);
+        final errorMsg = _getErrorMessage(e.toString());
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Easy Apply failed: $e'),
+            content: Text(
+              kDebugMode
+                  ? '$errorMsg\n${SupabaseService.describeSupabaseError(e)}'
+                  : errorMsg,
+            ),
             backgroundColor: AppColors.error,
+            duration: const Duration(seconds: 4),
           ),
         );
       }
     }
+  }
+
+  String _getErrorMessage(String error) {
+    final lower = error.toLowerCase();
+    if (lower.contains('already applied')) {
+      return 'You have already applied for this job.';
+    } else if (lower.contains('not accepting')) {
+      return 'This job is not currently accepting applications.';
+    } else if (lower.contains('not available')) {
+      return 'This job is not available for applications.';
+    } else if (lower.contains('employer')) {
+      return 'Employers cannot apply for jobs.';
+    } else if (lower.contains('not found')) {
+      return 'Job not found. It may have been removed.';
+    } else if (lower.contains('connection') || lower.contains('network')) {
+      return 'Unable to connect. Please check your internet connection and try again.';
+    } else if (lower.contains('unique') || lower.contains('duplicate')) {
+      return 'You have already applied for this job.';
+    } else if (lower.contains('row-level security') ||
+        lower.contains('42501') ||
+        lower.contains('permission denied')) {
+      return 'Application blocked by database permissions. Please contact the administrator.';
+    } else if (lower.contains('column') || lower.contains('pgrst204')) {
+      return 'Application data does not match the database schema. Please contact the administrator.';
+    } else if (lower.contains('foreign key') || lower.contains('23503')) {
+      return 'The selected job or profile is no longer available.';
+    } else if (lower.contains('not valid') ||
+        lower.contains('check constraint')) {
+      return 'The application data was rejected by the database.';
+    }
+    return 'Failed to apply. Please try again.';
   }
 
   Future<void> _applyForJob() async {
@@ -258,6 +362,22 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     if (user == null) {
       debugPrint('No user available for job application');
       _showLoginPrompt();
+      return;
+    }
+
+    final profile = await SupabaseService.getProfile(user.id);
+    final role = SupabaseService.normalizeAccountType(
+      profile?['account_type'] ?? user.userMetadata?['account_type'],
+    );
+    if (role != 'job_seeker') {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Employers cannot apply for jobs.'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
       return;
     }
 
@@ -271,6 +391,8 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
         user.id,
         widget.job['id'],
         coverLetter.isEmpty ? null : coverLetter,
+        resumeUrl: profile?['resume_url'] as String?,
+        matchScore: _matchScore,
       );
       if (mounted) {
         setState(() {
@@ -285,24 +407,21 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
         );
       }
     } catch (e) {
-      debugPrint('Error applying for job: $e');
+      debugPrint(
+        'Cover-letter application failed: ${SupabaseService.describeSupabaseError(e)}',
+      );
       if (mounted) {
         setState(() => _isApplying = false);
-        final raw = e.toString();
-        final lower = raw.toLowerCase();
-        final isDuplicate =
-            lower.contains('duplicate') ||
-            lower.contains('unique') ||
-            lower.contains('already');
-        final details = raw.length > 180 ? '${raw.substring(0, 180)}…' : raw;
+        final errorMsg = _getErrorMessage(e.toString());
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              isDuplicate
-                  ? 'You have already applied for this job'
-                  : 'Failed to apply. $details',
+              kDebugMode
+                  ? '$errorMsg\n${SupabaseService.describeSupabaseError(e)}'
+                  : errorMsg,
             ),
             backgroundColor: AppColors.error,
+            duration: const Duration(seconds: 4),
           ),
         );
       }
@@ -338,29 +457,6 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
           ),
         );
       }
-    }
-  }
-
-  Future<void> _checkIfExpressedInterest() async {
-    try {
-      final userId = Supabase.instance.client.auth.currentUser?.id;
-      if (userId == null) {
-        debugPrint('No user ID available for checking express interest');
-        return;
-      }
-      debugPrint(
-        'Checking if user $userId has expressed interest in job ${widget.job['id']}',
-      );
-      final hasInterest = await SupabaseService.hasExpressedInterest(
-        userId,
-        widget.job['id'],
-      );
-      if (mounted) {
-        setState(() => _hasExpressedInterest = hasInterest);
-        debugPrint('Job express interest status: $hasInterest');
-      }
-    } catch (e) {
-      debugPrint('Error checking express interest: $e');
     }
   }
 
@@ -490,7 +586,14 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
     final workModel = widget.job['work_model'] ?? '';
     final salaryMin = widget.job['salary_min'] ?? 0;
     final salaryMax = widget.job['salary_max'] ?? 0;
-    final currency = widget.job['salary_currency'] ?? 'USD';
+    final currency = widget.job['salary_currency'] ?? 'GHS';
+    final currentUser = Supabase.instance.client.auth.currentUser;
+    final role = currentUser == null
+        ? 'unknown'
+        : SupabaseService.normalizeAccountType(
+            currentUser.userMetadata?['account_type'],
+          );
+    final isJobSeeker = role == 'job_seeker';
 
     return Scaffold(
       backgroundColor: AppColors.bg(context),
@@ -545,24 +648,25 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      '$_matchScore% match',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.primary,
+                  if (isJobSeeker)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        '$_matchScore% match',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.primary,
+                        ),
                       ),
                     ),
-                  ),
                   if (company != null) ...[
                     const SizedBox(height: 10),
                     GestureDetector(
@@ -579,8 +683,11 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(Icons.star_outline,
-                              size: 16, color: AppColors.warning),
+                          const Icon(
+                            Icons.star_outline,
+                            size: 16,
+                            color: AppColors.warning,
+                          ),
                           const SizedBox(width: 4),
                           Text(
                             '${company['average_rating'] ?? 'N/A'} · Company insights',
@@ -590,8 +697,11 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                               fontWeight: FontWeight.w500,
                             ),
                           ),
-                          const Icon(Icons.chevron_right,
-                              size: 18, color: AppColors.primary),
+                          const Icon(
+                            Icons.chevron_right,
+                            size: 18,
+                            color: AppColors.primary,
+                          ),
                         ],
                       ),
                     ),
@@ -611,8 +721,13 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                   const SizedBox(height: 8),
                   _InfoChip(
                     icon: Icons.attach_money,
-                    label:
-                        '$currency ${(salaryMin / 1000).toStringAsFixed(0)}k - ${(salaryMax / 1000).toStringAsFixed(0)}k',
+                    label: SupabaseService.formatSalaryDisplay(
+                      min: salaryMin is num ? salaryMin : null,
+                      max: salaryMax is num ? salaryMax : null,
+                      currency: currency,
+                      negotiable:
+                          (widget.job['salary_negotiable'] as bool?) ?? false,
+                    ),
                   ),
                 ],
               ),
@@ -697,7 +812,7 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                 ],
               ),
             ),
-            if (_matchBreakdown != null) ...[
+            if (isJobSeeker && _matchBreakdown != null) ...[
               const SizedBox(height: 16),
               Container(
                 width: double.infinity,
@@ -719,16 +834,52 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    _ScoreBar(label: 'Skills', score: _matchBreakdown!.skillsScore, max: 35),
-                    _ScoreBar(label: 'Experience', score: _matchBreakdown!.experienceScore, max: 18),
-                    _ScoreBar(label: 'Location', score: _matchBreakdown!.locationScore, max: 12),
-                    _ScoreBar(label: 'Salary', score: _matchBreakdown!.salaryScore, max: 12),
-                    _ScoreBar(label: 'Work model', score: _matchBreakdown!.workModelScore, max: 10),
+                    _ScoreBar(
+                      label: 'Skills',
+                      score: _matchBreakdown!.skillsScore,
+                      max: 35,
+                    ),
+                    _ScoreBar(
+                      label: 'Experience',
+                      score: _matchBreakdown!.experienceScore,
+                      max: 18,
+                    ),
+                    _ScoreBar(
+                      label: 'Location',
+                      score: _matchBreakdown!.locationScore,
+                      max: 12,
+                    ),
+                    _ScoreBar(
+                      label: 'Salary',
+                      score: _matchBreakdown!.salaryScore,
+                      max: 12,
+                    ),
+                    _ScoreBar(
+                      label: 'Work model',
+                      score: _matchBreakdown!.workModelScore,
+                      max: 10,
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _loadingInsight ? null : _loadMatchInsight,
+                        icon: const Icon(Icons.auto_awesome),
+                        label: Text(
+                          _loadingInsight
+                              ? 'Analyzing with AI...'
+                              : 'Analyze this match with AI',
+                        ),
+                      ),
+                    ),
                     if (_matchBreakdown!.matchedSkills.isNotEmpty) ...[
                       const SizedBox(height: 8),
                       Text(
                         'Matched: ${_matchBreakdown!.matchedSkills.take(5).join(', ')}',
-                        style: const TextStyle(fontSize: 12, color: AppColors.success),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.success,
+                        ),
                       ),
                     ],
                     if (_loadingInsight)
@@ -747,11 +898,33 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                         ),
                       ),
                     ],
+                    if (_aiMatchAnalysis != null) ...[
+                      if ((_aiMatchAnalysis!['matching_skills'] as List?)
+                              ?.isNotEmpty ??
+                          false)
+                        Text(
+                          'AI matches: ${(_aiMatchAnalysis!['matching_skills'] as List).join(', ')}',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.success,
+                          ),
+                        ),
+                      if ((_aiMatchAnalysis!['missing_skills'] as List?)
+                              ?.isNotEmpty ??
+                          false)
+                        Text(
+                          'AI gaps: ${(_aiMatchAnalysis!['missing_skills'] as List).join(', ')}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSec(context),
+                          ),
+                        ),
+                    ],
                   ],
                 ),
               ),
             ],
-            if (_atsResult != null) ...[
+            if (isJobSeeker && _atsResult != null) ...[
               const SizedBox(height: 16),
               Container(
                 width: double.infinity,
@@ -786,106 +959,142 @@ class _JobDetailScreenState extends State<JobDetailScreen> {
                 ),
               ),
             ],
+            if (isJobSeeker)
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => SkillGapScreen(targetJob: widget.job),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.insights_outlined),
+                  label: const Text('Analyze skills for this job'),
+                ),
+              ),
             const SizedBox(height: 32),
 
             // Action buttons
-            if (!_hasApplied)
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: _isApplying ? null : _easyApply,
-                  icon: const Icon(Icons.bolt),
-                  label: _isApplying
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : const Text('Easy Apply'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    minimumSize: const Size(double.infinity, 52),
+            if (isJobSeeker) ...[
+              if (!_hasApplied)
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _isApplying ? null : _easyApply,
+                    icon: const Icon(Icons.bolt),
+                    label: _isApplying
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Text('Easy Apply'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      minimumSize: const Size(double.infinity, 52),
+                    ),
                   ),
+                ),
+              if (!_hasApplied) const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: _hasApplied || _isApplying
+                          ? null
+                          : _applyForJob,
+                      child: _isApplying
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Text(
+                              _hasApplied
+                                  ? 'Applied ✓'
+                                  : 'Apply with cover letter',
+                            ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: _isExpressingInterest
+                          ? null
+                          : _toggleExpressInterest,
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(
+                          color: _hasExpressedInterest
+                              ? AppColors.primary
+                              : AppColors.bord(context),
+                        ),
+                        backgroundColor: _hasExpressedInterest
+                            ? AppColors.primary.withValues(alpha: 0.1)
+                            : Colors.transparent,
+                      ),
+                      child: _isExpressingInterest
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  _hasExpressedInterest
+                                      ? Icons.check_circle
+                                      : Icons.favorite_border,
+                                  size: 18,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  _hasExpressedInterest
+                                      ? 'Interested'
+                                      : 'Interest',
+                                ),
+                              ],
+                            ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  SizedBox(
+                    width: 50,
+                    child: IconButton(
+                      onPressed: _toggleSave,
+                      icon: Icon(
+                        _isSaved ? Icons.bookmark : Icons.bookmark_border,
+                        color: _isSaved
+                            ? AppColors.primary
+                            : AppColors.textSec(context),
+                      ),
+                      tooltip: _isSaved ? 'Unsave job' : 'Save job',
+                    ),
+                  ),
+                ],
+              ),
+            ] else ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.warning.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: AppColors.warning.withValues(alpha: 0.25),
+                  ),
+                ),
+                child: const Text(
+                  'Employers cannot apply for jobs.',
+                  style: TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
-            if (!_hasApplied) const SizedBox(height: 12),
-            Row(
-              children: [
-                // Apply button
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: _hasApplied || _isApplying ? null : _applyForJob,
-                    child: _isApplying
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : Text(_hasApplied ? 'Applied ✓' : 'Apply with cover letter'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                // Express Interest button
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: _isExpressingInterest
-                        ? null
-                        : _toggleExpressInterest,
-                    style: OutlinedButton.styleFrom(
-                      side: BorderSide(
-                        color: _hasExpressedInterest
-                            ? AppColors.primary
-                            : AppColors.bord(context),
-                      ),
-                      backgroundColor: _hasExpressedInterest
-                          ? AppColors.primary.withValues(alpha: 0.1)
-                          : Colors.transparent,
-                    ),
-                    child: _isExpressingInterest
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                _hasExpressedInterest
-                                    ? Icons.check_circle
-                                    : Icons.favorite_border,
-                                size: 18,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                _hasExpressedInterest
-                                    ? 'Interested'
-                                    : 'Interest',
-                              ),
-                            ],
-                          ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                // Save button
-                SizedBox(
-                  width: 50,
-                  child: IconButton(
-                    onPressed: _toggleSave,
-                    icon: Icon(
-                      _isSaved ? Icons.bookmark : Icons.bookmark_border,
-                      color: _isSaved
-                          ? AppColors.primary
-                          : AppColors.textSec(context),
-                    ),
-                    tooltip: _isSaved ? 'Unsave job' : 'Save job',
-                  ),
-                ),
-              ],
-            ),
+            ],
             const SizedBox(height: 32),
           ],
         ),

@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/services/skill_gap_service.dart';
+import '../../../core/services/ai_service.dart';
+import '../../../core/services/resume_text_service.dart';
+import '../../../core/supabase/supabase_service.dart';
 import '../../../core/theme/app_colors.dart';
 import 'skills_screen.dart';
 
 class SkillGapScreen extends StatefulWidget {
-  const SkillGapScreen({super.key});
+  final Map<String, dynamic>? targetJob;
+
+  const SkillGapScreen({super.key, this.targetJob});
 
   @override
   State<SkillGapScreen> createState() => _SkillGapScreenState();
@@ -15,6 +20,8 @@ class _SkillGapScreenState extends State<SkillGapScreen> {
   SkillGapResult? _result;
   bool _isLoading = true;
   String? _error;
+  Map<String, dynamic>? _aiResult;
+  bool _aiLoading = false;
 
   @override
   void initState() {
@@ -38,7 +45,10 @@ class _SkillGapScreenState extends State<SkillGapScreen> {
     });
 
     try {
-      final result = await SkillGapService.analyze(userId);
+      final result = await SkillGapService.analyze(
+        userId,
+        targetJob: widget.targetJob,
+      );
       if (mounted) {
         setState(() {
           _result = result;
@@ -55,6 +65,27 @@ class _SkillGapScreenState extends State<SkillGapScreen> {
     }
   }
 
+  Future<void> _analyzeWithAi() async {
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    final job = widget.targetJob;
+    if (userId == null || job == null) return;
+    setState(() => _aiLoading = true);
+    try {
+      final profile = await SupabaseService.getProfile(userId);
+      final skills = await SupabaseService.getUserSkillNames(userId);
+      final resumeText = await ResumeTextService.fromProfile(profile);
+      final result = await AiService.analyzeSkillsGap(
+        job: job,
+        profile: profile,
+        skills: skills,
+        resumeText: resumeText,
+      );
+      if (mounted) setState(() => _aiResult = result);
+    } finally {
+      if (mounted) setState(() => _aiLoading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -62,10 +93,7 @@ class _SkillGapScreenState extends State<SkillGapScreen> {
       appBar: AppBar(
         title: const Text('Skill gap analysis'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _analyze,
-          ),
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _analyze),
         ],
       ),
       body: _isLoading
@@ -73,52 +101,67 @@ class _SkillGapScreenState extends State<SkillGapScreen> {
               child: CircularProgressIndicator(color: AppColors.primary),
             )
           : _error != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(32),
-                    child: Text(
-                      _error!,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: AppColors.textSec(context)),
-                    ),
-                  ),
-                )
-              : RefreshIndicator(
-                  onRefresh: _analyze,
-                  child: ListView(
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Text(
+                  _error!,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppColors.textSec(context)),
+                ),
+              ),
+            )
+          : RefreshIndicator(
+              onRefresh: _analyze,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Container(
                     padding: const EdgeInsets.all(16),
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: AppColors.primary.withValues(alpha: 0.2),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: AppColors.primary.withValues(alpha: 0.2),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.insights_outlined,
+                          color: AppColors.primary,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            widget.targetJob == null
+                                ? 'Analyzed ${_result!.jobsAnalyzed} active jobs against your profile and resume.'
+                                : 'Analyzed this job against your profile skills and resume.',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: AppColors.text(context),
+                            ),
                           ),
                         ),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.insights_outlined,
-                              color: AppColors.primary,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                'Analyzed ${_result!.jobsAnalyzed} active jobs against your profile skills.',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: AppColors.text(context),
-                                ),
-                              ),
-                            ),
-                          ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  if (widget.targetJob != null) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: _aiLoading ? null : _analyzeWithAi,
+                        icon: const Icon(Icons.auto_awesome),
+                        label: Text(
+                          _aiLoading ? 'Analyzing...' : 'Analyze with AI',
                         ),
                       ),
-                      const SizedBox(height: 24),
+                    ),
+                    if (_aiResult != null) ...[
+                      const SizedBox(height: 16),
                       Text(
-                        'Skills to add',
+                        'AI recommendations',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
@@ -126,61 +169,85 @@ class _SkillGapScreenState extends State<SkillGapScreen> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Text(
-                        'In high demand for roles you\'re browsing',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: AppColors.textSec(context),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      if (_result!.missingSkills.isEmpty)
-                        _emptyCard(
-                          context,
-                          'Great job! Your skills align well with current openings.',
-                          Icons.check_circle_outline,
-                          AppColors.success,
-                        )
-                      else
-                        ..._result!.missingSkills.map(
-                          (s) => _skillTile(context, s, isMissing: true),
-                        ),
-                      const SizedBox(height: 24),
-                      Text(
-                        'Your matching skills',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.text(context),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      if (_result!.matchedSkills.isEmpty)
-                        _emptyCard(
-                          context,
-                          'Add skills to your profile to see matches here.',
-                          Icons.school_outlined,
-                          AppColors.warning,
-                        )
-                      else
-                        ..._result!.matchedSkills.map(
-                          (s) => _skillTile(context, s, isMissing: false),
-                        ),
-                      const SizedBox(height: 24),
-                      ElevatedButton.icon(
-                        onPressed: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => const SkillsScreen(),
+                      ...(_aiResult!['recommendations'] as List? ?? const [])
+                          .whereType<Map>()
+                          .map(
+                            (recommendation) => ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: Text('${recommendation['skill'] ?? ''}'),
+                              subtitle: Text(
+                                '${recommendation['reason'] ?? ''}',
+                              ),
+                              trailing: Text(
+                                '${recommendation['priority'] ?? ''}',
+                              ),
                             ),
-                          );
-                        },
-                        icon: const Icon(Icons.add),
-                        label: const Text('Manage my skills'),
-                      ),
+                          ),
                     ],
+                    const SizedBox(height: 24),
+                  ],
+                  Text(
+                    'Skills to add',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.text(context),
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'In high demand for roles you\'re browsing',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textSec(context),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (_result!.missingSkills.isEmpty)
+                    _emptyCard(
+                      context,
+                      'Great job! Your skills align well with current openings.',
+                      Icons.check_circle_outline,
+                      AppColors.success,
+                    )
+                  else
+                    ..._result!.missingSkills.map(
+                      (s) => _skillTile(context, s, isMissing: true),
+                    ),
+                  const SizedBox(height: 24),
+                  Text(
+                    'Your matching skills',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.text(context),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (_result!.matchedSkills.isEmpty)
+                    _emptyCard(
+                      context,
+                      'Add skills to your profile to see matches here.',
+                      Icons.school_outlined,
+                      AppColors.warning,
+                    )
+                  else
+                    ..._result!.matchedSkills.map(
+                      (s) => _skillTile(context, s, isMissing: false),
+                    ),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const SkillsScreen()),
+                      );
+                    },
+                    icon: const Icon(Icons.add),
+                    label: const Text('Manage my skills'),
+                  ),
+                ],
+              ),
+            ),
     );
   }
 

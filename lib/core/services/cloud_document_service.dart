@@ -11,7 +11,7 @@ class CloudDocumentService {
 
   /// Opens the native file picker (includes Google Drive / iCloud on mobile).
   static Future<({Uint8List bytes, String fileName, CloudSource source})?>
-      pickFromCloudPicker(CloudSource source) async {
+  pickFromCloudPicker(CloudSource source) async {
     try {
       final result = await FilePicker.pickFiles(
         type: FileType.custom,
@@ -22,11 +22,7 @@ class CloudDocumentService {
       if (result == null || result.files.isEmpty) return null;
       final file = result.files.first;
       if (file.bytes == null || file.size > 5 * 1024 * 1024) return null;
-      return (
-        bytes: file.bytes!,
-        fileName: file.name,
-        source: source,
-      );
+      return (bytes: file.bytes!, fileName: file.name, source: source);
     } catch (e) {
       debugPrint('CloudDocumentService: pick $e');
       return null;
@@ -55,18 +51,17 @@ class CloudDocumentService {
 
   static String? _normalizeShareUrl(String url) {
     if (url.contains('drive.google.com')) {
-      final idMatch = RegExp(r'/d/([a-zA-Z0-9_-]+)').firstMatch(url) ??
+      final idMatch =
+          RegExp(r'/d/([a-zA-Z0-9_-]+)').firstMatch(url) ??
           RegExp(r'id=([a-zA-Z0-9_-]+)').firstMatch(url);
       if (idMatch != null) {
         return 'https://drive.google.com/uc?export=download&id=${idMatch.group(1)}';
       }
     }
     if (url.contains('dropbox.com')) {
-      return url.replaceFirst('www.dropbox.com', 'dl.dropboxusercontent.com')
+      return url
+          .replaceFirst('www.dropbox.com', 'dl.dropboxusercontent.com')
           .replaceAll('?dl=0', '?dl=1');
-    }
-    if (url.endsWith('.pdf') || url.endsWith('.doc') || url.endsWith('.docx')) {
-      return url;
     }
     return null;
   }
@@ -89,7 +84,9 @@ class CloudDocumentService {
     if (!_allowedExtensions.contains(ext)) return null;
 
     final storagePath = '$userId/resume.$ext';
-    await Supabase.instance.client.storage.from('resumes').uploadBinary(
+    await Supabase.instance.client.storage
+        .from('resumes')
+        .uploadBinary(
           storagePath,
           bytes,
           fileOptions: const FileOptions(upsert: true),
@@ -109,9 +106,9 @@ class CloudDocumentService {
   }
 
   static String labelFor(CloudSource source) => switch (source) {
-        CloudSource.googleDrive => 'Google Drive',
-        CloudSource.dropbox => 'Dropbox',
-        CloudSource.iCloud => 'iCloud',
-        CloudSource.device => 'Device',
-      };
+    CloudSource.googleDrive => 'Google Drive',
+    CloudSource.dropbox => 'Dropbox',
+    CloudSource.iCloud => 'iCloud',
+    CloudSource.device => 'Device',
+  };
 }

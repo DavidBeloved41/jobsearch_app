@@ -4,11 +4,15 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/services/offline_cache_service.dart';
 import '../../../core/supabase/supabase_service.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/app_feedback.dart';
 
 class ChatScreen extends StatefulWidget {
   final String receiverId;
   final String receiverName;
   final String receiverRole;
+  final String? receiverAvatarUrl;
+  final String? receiverLogoUrl;
+  final String? receiverCompanyName;
   final bool isRecruiter;
 
   const ChatScreen({
@@ -16,6 +20,9 @@ class ChatScreen extends StatefulWidget {
     required this.receiverId,
     required this.receiverName,
     required this.receiverRole,
+    this.receiverAvatarUrl,
+    this.receiverLogoUrl,
+    this.receiverCompanyName,
     this.isRecruiter = false,
   });
 
@@ -29,6 +36,12 @@ class _ChatScreenState extends State<ChatScreen> {
   List<Map<String, dynamic>> _messages = [];
   bool _isLoading = true;
   bool _isSending = false;
+  late String _displayName;
+  late String _displayRole;
+  String? _displayAvatarUrl;
+  String? _displayLogoUrl;
+  String? _displayCompanyName;
+  bool _isCompany = false;
   late final RealtimeChannel _channel;
   // FIX: Lazy initialize instead of field-level non-null assertion
   late String _currentUserId;
@@ -36,6 +49,12 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    _displayName = widget.receiverName;
+    _displayRole = widget.receiverRole;
+    _displayAvatarUrl = widget.receiverAvatarUrl;
+    _displayLogoUrl = widget.receiverLogoUrl;
+    _displayCompanyName = widget.receiverCompanyName;
+    _isCompany = widget.isRecruiter;
     _currentUserId = Supabase.instance.client.auth.currentUser?.id ?? '';
     if (_currentUserId.isEmpty) {
       debugPrint('Error: No user ID available for chat screen');
@@ -51,8 +70,29 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
     _loadMessages();
+    _loadParticipantIdentity();
     _subscribeToMessages();
-    SupabaseService.markMessagesAsRead(_currentUserId, widget.receiverId);
+  }
+
+  Future<void> _loadParticipantIdentity() async {
+    final participant = await SupabaseService.getMessagingParticipant(
+      widget.receiverId,
+    );
+    if (!mounted || participant == null) return;
+    setState(() {
+      _displayName =
+          participant['company_name'] as String? ??
+          participant['full_name'] as String? ??
+          _displayName;
+      _displayRole =
+          participant['job_title'] as String? ??
+          participant['headline'] as String? ??
+          _displayRole;
+      _displayAvatarUrl = participant['profile_photo_url'] as String?;
+      _displayLogoUrl = participant['logo_url'] as String?;
+      _displayCompanyName = participant['company_name'] as String?;
+      _isCompany = participant['account_type'] == 'employer';
+    });
   }
 
   @override
@@ -65,22 +105,23 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _loadMessages() async {
     try {
-      final messages = await Supabase.instance.client
-          .from('messages')
-          .select()
-          .or(
-            'and(sender_id.eq.$_currentUserId,receiver_id.eq.${widget.receiverId}),and(sender_id.eq.${widget.receiverId},receiver_id.eq.$_currentUserId)',
-          )
-          .order('created_at', ascending: true);
+      final messages = await SupabaseService.getConversationMessages(
+        _currentUserId,
+        widget.receiverId,
+      );
 
       setState(() {
-        _messages = List<Map<String, dynamic>>.from(messages);
+        _messages = messages;
         _isLoading = false;
       });
+      await SupabaseService.markMessagesDelivered(widget.receiverId);
+      await SupabaseService.markMessagesSeen(widget.receiverId);
       _scrollToBottom();
     } catch (e) {
-      setState(() => _isLoading = false);
-      debugPrint('Error loading messages: $e');
+      if (mounted) setState(() => _isLoading = false);
+      debugPrint(
+        'Error loading messages: ${SupabaseService.describeSupabaseError(e)}',
+      );
     }
   }
 
@@ -88,7 +129,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _channel = Supabase.instance.client
         .channel('messages_${_currentUserId}_${widget.receiverId}')
         .onPostgresChanges(
-          event: PostgresChangeEvent.insert,
+          event: PostgresChangeEvent.all,
           schema: 'public',
           table: 'messages',
           callback: (payload) {
@@ -97,7 +138,22 @@ class _ChatScreenState extends State<ChatScreen> {
                     newMessage['receiver_id'] == widget.receiverId) ||
                 (newMessage['sender_id'] == widget.receiverId &&
                     newMessage['receiver_id'] == _currentUserId)) {
-              setState(() => _messages.add(newMessage));
+              final messageId = newMessage['id'];
+              setState(() {
+                final index = _messages.indexWhere(
+                  (message) => message['id'] == messageId,
+                );
+                if (payload.eventType == PostgresChangeEvent.insert &&
+                    index < 0) {
+                  _messages.add(newMessage);
+                } else if (index >= 0) {
+                  _messages[index] = {..._messages[index], ...newMessage};
+                }
+              });
+              if (newMessage['receiver_id'] == _currentUserId) {
+                SupabaseService.markMessagesDelivered(widget.receiverId);
+                SupabaseService.markMessagesSeen(widget.receiverId);
+              }
               _scrollToBottom();
             }
           },
@@ -117,11 +173,15 @@ class _ChatScreenState extends State<ChatScreen> {
       final hasNetwork = !online.contains(ConnectivityResult.none);
 
       if (hasNetwork) {
-        await Supabase.instance.client.from('messages').insert({
-          'sender_id': _currentUserId,
-          'receiver_id': widget.receiverId,
-          'content': content,
-        });
+        final sentMessage = await SupabaseService.sendMessage(
+          senderId: _currentUserId,
+          receiverId: widget.receiverId,
+          content: content,
+        );
+        if (mounted) {
+          setState(() => _messages.add(sentMessage));
+          _scrollToBottom();
+        }
       } else {
         await OfflineCacheService.queueMessage(
           senderId: _currentUserId,
@@ -150,7 +210,9 @@ class _ChatScreenState extends State<ChatScreen> {
         return;
       }
     } catch (e) {
-      debugPrint('Error sending message: $e');
+      debugPrint(
+        'Error sending message: ${SupabaseService.describeSupabaseError(e)}',
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -238,17 +300,29 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final mutedText = colorScheme.onSurface.withValues(alpha: 0.62);
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
+        backgroundColor: theme.appBarTheme.backgroundColor,
+        foregroundColor: colorScheme.onSurface,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
+                _ParticipantAvatar(
+                  key: ValueKey(widget.receiverId),
+                  avatarUrl: _displayAvatarUrl,
+                  logoUrl: _displayLogoUrl,
+                  isCompany: _isCompany,
+                ),
+                const SizedBox(width: 8),
                 Flexible(
                   child: Text(
-                    widget.receiverName,
+                    _displayName,
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
@@ -257,7 +331,9 @@ class _ChatScreenState extends State<ChatScreen> {
                   ),
                 ),
                 if (widget.isRecruiter ||
-                    widget.receiverRole.toLowerCase().contains('recruiter')) ...[
+                    widget.receiverRole.toLowerCase().contains(
+                      'recruiter',
+                    )) ...[
                   const SizedBox(width: 6),
                   Container(
                     padding: const EdgeInsets.symmetric(
@@ -281,11 +357,8 @@ class _ChatScreenState extends State<ChatScreen> {
               ],
             ),
             Text(
-              widget.receiverRole,
-              style: const TextStyle(
-                fontSize: 12,
-                color: AppColors.textSecondary,
-              ),
+              _displayCompanyName ?? _displayRole,
+              style: TextStyle(fontSize: 12, color: mutedText),
             ),
           ],
         ),
@@ -305,27 +378,10 @@ class _ChatScreenState extends State<ChatScreen> {
                     child: CircularProgressIndicator(color: AppColors.primary),
                   )
                 : _messages.isEmpty
-                ? const Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.chat_bubble_outline,
-                          size: 64,
-                          color: AppColors.textHint,
-                        ),
-                        SizedBox(height: 16),
-                        Text(
-                          'No messages yet',
-                          style: TextStyle(color: AppColors.textSecondary),
-                        ),
-                        SizedBox(height: 8),
-                        Text(
-                          'Start the conversation!',
-                          style: TextStyle(color: AppColors.textSecondary),
-                        ),
-                      ],
-                    ),
+                ? const AppEmptyState(
+                    icon: Icons.chat_bubble_outline,
+                    title: 'No messages yet',
+                    message: 'Start the conversation when you are ready.',
                   )
                 : ListView.builder(
                     controller: _scrollController,
@@ -377,8 +433,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                   ),
                                   decoration: BoxDecoration(
                                     color: isMe
-                                        ? AppColors.primary
-                                        : AppColors.surface,
+                                        ? colorScheme.primary
+                                        : colorScheme.surface,
                                     borderRadius: BorderRadius.only(
                                       topLeft: const Radius.circular(16),
                                       topRight: const Radius.circular(16),
@@ -391,26 +447,41 @@ class _ChatScreenState extends State<ChatScreen> {
                                     ),
                                     border: isMe
                                         ? null
-                                        : Border.all(color: AppColors.border),
+                                        : Border.all(
+                                            color: colorScheme.outline
+                                                .withValues(alpha: 0.35),
+                                          ),
                                   ),
                                   child: Text(
                                     message['content'] ?? '',
                                     style: TextStyle(
                                       fontSize: 14,
                                       color: isMe
-                                          ? Colors.white
-                                          : AppColors.textPrimary,
+                                          ? colorScheme.onPrimary
+                                          : colorScheme.onSurface,
                                     ),
                                   ),
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
                                   _formatTime(message['created_at']),
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 11,
-                                    color: AppColors.textHint,
+                                    color: mutedText,
                                   ),
                                 ),
+                                if (isMe)
+                                  Text(
+                                    '✓${message['delivered_at'] != null ? '✓' : ''} '
+                                    '${SupabaseService.messageDeliveryStatus(message)}',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: message['seen_at'] != null
+                                          ? colorScheme.primary
+                                          : mutedText,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
                               ],
                             ),
                           ],
@@ -423,9 +494,9 @@ class _ChatScreenState extends State<ChatScreen> {
           // Message input
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: const BoxDecoration(
-              color: AppColors.surface,
-              border: Border(top: BorderSide(color: AppColors.border)),
+            decoration: BoxDecoration(
+              color: colorScheme.surface,
+              border: Border(top: BorderSide(color: colorScheme.outline)),
             ),
             child: SafeArea(
               child: Row(
@@ -437,11 +508,11 @@ class _ChatScreenState extends State<ChatScreen> {
                         hintText: 'Type a message...',
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(24),
-                          borderSide: const BorderSide(color: AppColors.border),
+                          borderSide: BorderSide(color: colorScheme.outline),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(24),
-                          borderSide: const BorderSide(color: AppColors.border),
+                          borderSide: BorderSide(color: colorScheme.outline),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(24),
@@ -454,7 +525,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           vertical: 10,
                         ),
                         filled: true,
-                        fillColor: AppColors.background,
+                        fillColor: theme.scaffoldBackgroundColor,
                       ),
                       maxLines: null,
                       textCapitalization: TextCapitalization.sentences,
@@ -467,21 +538,22 @@ class _ChatScreenState extends State<ChatScreen> {
                     child: Container(
                       width: 44,
                       height: 44,
-                      decoration: const BoxDecoration(
-                        color: AppColors.primary,
+                      decoration: BoxDecoration(
+                        color: colorScheme.primary,
                         shape: BoxShape.circle,
                       ),
                       child: _isSending
-                          ? const Padding(
+                          ? Padding(
+                              // ignore: prefer_const_constructors
                               padding: EdgeInsets.all(12),
                               child: CircularProgressIndicator(
-                                color: Colors.white,
+                                color: colorScheme.onPrimary,
                                 strokeWidth: 2,
                               ),
                             )
-                          : const Icon(
+                          : Icon(
                               Icons.send,
-                              color: Colors.white,
+                              color: colorScheme.onPrimary,
                               size: 20,
                             ),
                     ),
@@ -492,6 +564,38 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ParticipantAvatar extends StatelessWidget {
+  final String? avatarUrl;
+  final String? logoUrl;
+  final bool isCompany;
+
+  const _ParticipantAvatar({
+    super.key,
+    this.avatarUrl,
+    this.logoUrl,
+    required this.isCompany,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final imageUrl = isCompany ? logoUrl : avatarUrl;
+    return CircleAvatar(
+      radius: 16,
+      backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+      backgroundImage: imageUrl != null && imageUrl.isNotEmpty
+          ? NetworkImage(imageUrl)
+          : null,
+      child: imageUrl == null || imageUrl.isEmpty
+          ? Icon(
+              isCompany ? Icons.business_outlined : Icons.person_outline,
+              size: 18,
+              color: AppColors.primary,
+            )
+          : null,
     );
   }
 }

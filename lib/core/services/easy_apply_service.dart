@@ -1,5 +1,8 @@
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../services/ai_service.dart';
 import '../services/offline_cache_service.dart';
+import '../services/resume_text_service.dart';
 import '../supabase/supabase_service.dart';
 
 class EasyApplyService {
@@ -7,12 +10,14 @@ class EasyApplyService {
     required Map<String, dynamic> job,
     required Map<String, dynamic>? profile,
     required List<String> skillNames,
+    String? resumeText,
   }) async {
     if (AiService.isConfigured) {
       final aiLetter = await AiService.generateCoverLetter(
         job: job,
         profile: profile,
         skills: skillNames,
+        resumeText: resumeText,
       );
       if (aiLetter != null && aiLetter.trim().length > 80) {
         return aiLetter.trim();
@@ -30,7 +35,9 @@ class EasyApplyService {
     final fullName = profile?['full_name'] as String? ?? '';
     final userTitle = profile?['job_title'] as String? ?? '';
     final yearsRaw = profile?['years_of_experience'];
-    final years = yearsRaw is num ? yearsRaw.toInt() : int.tryParse('$yearsRaw');
+    final years = yearsRaw is num
+        ? yearsRaw.toInt()
+        : int.tryParse('$yearsRaw');
     final skillsLine = skillNames.take(6).join(', ');
 
     final buffer = StringBuffer();
@@ -67,17 +74,19 @@ class EasyApplyService {
   }) async {
     final profile = await SupabaseService.getProfile(userId);
     final skills = await SupabaseService.getUserSkillNames(userId);
+    final resumeText = await ResumeTextService.fromProfile(profile);
     final coverLetter = await buildCoverLetter(
       job: job,
       profile: profile,
       skillNames: skills,
+      resumeText: resumeText,
     );
     return {
       'coverLetter': coverLetter,
       'resumeUrl': profile?['resume_url'] as String?,
       'profileSnapshot': {
         'full_name': profile?['full_name'],
-        'email': profile?['email'],
+        'email': Supabase.instance.client.auth.currentUser?.email,
         'phone_number': profile?['phone_number'],
         'location': profile?['location'],
         'job_title': profile?['job_title'],

@@ -67,7 +67,9 @@ class _HelpScreenState extends State<HelpScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Could not open email app. Please email support@smartjob.app'),
+            content: Text(
+              'Could not open email app. Please email support@smartjob.app',
+            ),
             backgroundColor: AppColors.error,
           ),
         );
@@ -133,20 +135,19 @@ class _HelpScreenState extends State<HelpScreen> {
 
   // ── Share with Friends ───────────────────────────────────────────────────
   void _shareApp() async {
-  final Uri url = Uri.parse('https://smartjob.app/download');
-  if (await canLaunchUrl(url)) {
-    await launchUrl(url, mode: LaunchMode.externalApplication);
+    final Uri url = Uri.parse('https://smartjob.app/download');
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    }
   }
-}
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Scaffold(
       backgroundColor: AppColors.bg(context),
-      appBar: AppBar(
-        title: const Text('Help & Support'),
-      ),
+      appBar: AppBar(title: const Text('Help & Support')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -163,7 +164,11 @@ class _HelpScreenState extends State<HelpScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.support_agent, color: Colors.white, size: 32),
+                  const Icon(
+                    Icons.support_agent,
+                    color: Colors.white,
+                    size: 32,
+                  ),
                   const SizedBox(height: 12),
                   const Text(
                     'Need help?',
@@ -295,8 +300,10 @@ class _HelpScreenState extends State<HelpScreen> {
                 border: Border.all(color: AppColors.bord(context)),
               ),
               child: ListTile(
-                leading: const Icon(Icons.menu_book_outlined,
-                    color: AppColors.primary),
+                leading: const Icon(
+                  Icons.menu_book_outlined,
+                  color: AppColors.primary,
+                ),
                 title: Text(
                   'Career advice library',
                   style: TextStyle(
@@ -311,12 +318,12 @@ class _HelpScreenState extends State<HelpScreen> {
                     color: AppColors.textSec(context),
                   ),
                 ),
-                trailing:
-                    Icon(Icons.chevron_right, color: AppColors.textSec(context)),
+                trailing: Icon(
+                  Icons.chevron_right,
+                  color: AppColors.textSec(context),
+                ),
                 onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const CareerAdviceScreen(),
-                  ),
+                  MaterialPageRoute(builder: (_) => const CareerAdviceScreen()),
                 ),
               ),
             ),

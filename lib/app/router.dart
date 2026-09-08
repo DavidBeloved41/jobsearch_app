@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/auth/auth_controller.dart';
+import '../core/supabase/supabase_service.dart';
 import '../features/auth/screens/email_verification_screen.dart';
 import '../features/auth/screens/forgot_password_screen.dart';
 import '../features/auth/screens/login_screen.dart';
 import '../features/auth/screens/reset_password_confirmation_screen.dart';
 import '../features/auth/screens/signup_screen.dart';
 import '../features/admin/screens/admin_dashboard_screen.dart';
+import '../features/admin/screens/admin_jobs_screen.dart';
+import '../features/admin/screens/admin_users_screen.dart';
+import '../features/admin/screens/admin_applications_screen.dart';
 import '../features/auth/screens/splash_screen.dart';
 import '../features/employer/screens/employer_dashboard_screen.dart';
 import '../features/employer/screens/employer_company_profile_screen.dart';
@@ -25,6 +30,9 @@ class AppRoutes {
   static const employerCompanyProfile = '/employer/company-profile';
   static const employerSettings = '/employer/settings';
   static const adminDashboard = '/admin/dashboard';
+  static const adminJobs = '/admin/jobs';
+  static const adminUsers = '/admin/users';
+  static const adminApplications = '/admin/applications';
   static const resetPassword = '/reset-password';
 }
 
@@ -44,6 +52,9 @@ GoRouter createRouter({String initialLocation = AppRoutes.login}) {
       final isAuth = authNotifier.isAuthenticated;
       final currentLocation = state.uri.path;
       final isResetRoute = currentLocation == AppRoutes.resetPassword;
+      final currentUser = Supabase.instance.client.auth.currentUser;
+      final hasUnverifiedSession =
+          currentUser != null && !SupabaseService.isEmailConfirmed(currentUser);
 
       debugPrint(
         'Router redirect: isAuth=$isAuth, location=$currentLocation, '
@@ -62,6 +73,13 @@ GoRouter createRouter({String initialLocation = AppRoutes.login}) {
 
       // UNAUTHENTICATED USER
       if (!isAuth) {
+        if (hasUnverifiedSession) {
+          if (currentLocation == AppRoutes.emailVerification) return null;
+          debugPrint(
+            'Router: Unverified Supabase session, redirecting to verification',
+          );
+          return AppRoutes.emailVerification;
+        }
         // Allow public auth routes
         if (unauthPublicRoutes.contains(currentLocation)) {
           debugPrint('Router: Unauthenticated on public route, no redirect');
@@ -77,6 +95,12 @@ GoRouter createRouter({String initialLocation = AppRoutes.login}) {
           'Router: Unauthenticated on private route, redirecting to login',
         );
         return AppRoutes.login;
+      }
+
+      // Signup may return a session before email confirmation. Keep the user
+      // on the verification screen until a deliberate verified login occurs.
+      if (currentLocation == AppRoutes.emailVerification) {
+        return null;
       }
 
       // AUTHENTICATED USER
@@ -105,6 +129,24 @@ GoRouter createRouter({String initialLocation = AppRoutes.login}) {
         return destination;
       }
 
+      final currentUserEmail = currentUser?.email;
+      final isEmailVerified = SupabaseService.isEmailConfirmed(currentUser);
+      if (isAuth && currentUser != null && !isEmailVerified) {
+        debugPrint(
+          'Router: Authenticated but email not verified, redirecting to login',
+        );
+        return AppRoutes.login;
+      }
+
+      final isAuthorizedAdmin =
+          SupabaseService.isAuthorizedAdminEmail(currentUserEmail) &&
+          authNotifier.isAdmin;
+
+      if (currentLocation.startsWith('/admin') && !isAuthorizedAdmin) {
+        debugPrint('Router: unauthorized admin route access denied');
+        return AppRoutes.home;
+      }
+
       // Only enforce dashboard redirects if role is known
       if (authNotifier.roleKnown) {
         // Enforce employer dashboard
@@ -129,8 +171,16 @@ GoRouter createRouter({String initialLocation = AppRoutes.login}) {
         }
 
         if (authNotifier.isAdmin) {
-          if (currentLocation != AppRoutes.adminDashboard && !isResetRoute) {
-            debugPrint('Router: Admin not on admin dashboard, redirecting');
+          if (!isAuthorizedAdmin) {
+            debugPrint('Router: Unauthorized admin, redirecting to home');
+            return AppRoutes.home;
+          }
+          // Allow authorized admins to access any admin route (/admin/*)
+          // Only redirect to dashboard if they somehow end up on a non-admin route
+          if (!currentLocation.startsWith('/admin') && !isResetRoute) {
+            debugPrint(
+              'Router: Authorized admin on non-admin route, redirecting to admin dashboard',
+            );
             return AppRoutes.adminDashboard;
           }
         }
@@ -183,6 +233,18 @@ GoRouter createRouter({String initialLocation = AppRoutes.login}) {
       GoRoute(
         path: AppRoutes.adminDashboard,
         builder: (context, state) => const AdminDashboardScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.adminJobs,
+        builder: (context, state) => const AdminJobsScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.adminUsers,
+        builder: (context, state) => const AdminUsersScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.adminApplications,
+        builder: (context, state) => const AdminApplicationsScreen(),
       ),
       GoRoute(
         path: AppRoutes.resetPassword,

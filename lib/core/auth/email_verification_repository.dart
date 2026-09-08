@@ -2,6 +2,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 abstract class EmailVerificationRepository {
   Future<void> resendVerificationEmail(String email);
+  Future<AuthResponse> verifyVerificationCode(String email, String code);
 }
 
 class SupabaseEmailVerificationRepository
@@ -13,10 +14,15 @@ class SupabaseEmailVerificationRepository
 
   @override
   Future<void> resendVerificationEmail(String email) {
-    return _client.auth.resend(
+    return _client.auth.resend(email: email.trim(), type: OtpType.signup);
+  }
+
+  @override
+  Future<AuthResponse> verifyVerificationCode(String email, String code) {
+    return _client.auth.verifyOTP(
       email: email.trim(),
+      token: code.trim(),
       type: OtpType.signup,
-      emailRedirectTo: 'smartjob://login',
     );
   }
 }

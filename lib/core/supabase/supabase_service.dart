@@ -1,10 +1,19 @@
 import 'package:flutter/foundation.dart';
+import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../app/router.dart';
 
 class SupabaseService {
   static final _client = Supabase.instance.client;
+
+  static String describeSupabaseError(Object error) {
+    if (error is PostgrestException) {
+      return 'message=${error.message}; code=${error.code}; '
+          'details=${error.details}; hint=${error.hint}';
+    }
+    return error.toString();
+  }
 
   // Fetch skill names for a user (for match scoring)
   static Future<List<String>> getUserSkillNames(String userId) async {
@@ -31,7 +40,7 @@ class SupabaseService {
     var dbQuery = _client
         .from('profiles')
         .select(
-          'id, full_name, headline, profile_photo_url, account_type, company_name',
+          'id, full_name, headline, job_title, company_name, profile_photo_url, account_type',
         )
         .ilike('full_name', '%$query%')
         .limit(20);
@@ -44,6 +53,8 @@ class SupabaseService {
     if (currentUserId == null) return results;
     return results.where((p) => p['id'] != currentUserId).toList();
   }
+
+  static const String authorizedAdminEmail = 'beloveddavid41@gmail.com';
 
   static String normalizeAccountType(Object? rawAccountType) {
     final accountType = (rawAccountType as String? ?? '').trim().toLowerCase();
@@ -61,6 +72,121 @@ class SupabaseService {
     }
     // Unknown/unspecified account types should be explicit
     return 'unknown';
+  }
+
+  static bool isJobSeekerRole(Object? rawAccountType) {
+    return normalizeAccountType(rawAccountType) == 'job_seeker';
+  }
+
+  static bool isEmailConfirmedAt(Object? emailConfirmedAt) {
+    if (emailConfirmedAt == null) return false;
+    if (emailConfirmedAt is DateTime) return true;
+    if (emailConfirmedAt is String) {
+      return emailConfirmedAt.trim().isNotEmpty;
+    }
+    return true;
+  }
+
+  static bool isEmailConfirmed(User? user) {
+    return user != null && isEmailConfirmedAt(user.emailConfirmedAt);
+  }
+
+  static bool canAccessAuthenticatedApp({Session? session, User? user}) {
+    return session != null && user != null && isEmailConfirmed(user);
+  }
+
+  static String maskEmail(String? email) {
+    final trimmed = (email ?? '').trim();
+    if (trimmed.isEmpty || !trimmed.contains('@')) {
+      return trimmed;
+    }
+
+    final parts = trimmed.split('@');
+    final localPart = parts.first;
+    final domain = parts.last;
+    if (localPart.length <= 2) {
+      return '${localPart.substring(0, 1)}***@$domain';
+    }
+    return '${localPart.substring(0, 2)}***@$domain';
+  }
+
+  static bool canApplyToJobs(Object? rawAccountType) {
+    return isJobSeekerRole(rawAccountType);
+  }
+
+  static bool isApplicationAllowed({
+    required Object? rawAccountType,
+    required Object? emailConfirmedAt,
+  }) {
+    final normalizedType = normalizeAccountType(rawAccountType);
+    if (normalizedType != 'job_seeker') return false;
+    return isEmailConfirmedAt(emailConfirmedAt);
+  }
+
+  static String formatSalaryDisplay({
+    num? min,
+    num? max,
+    String? currency,
+    bool negotiable = false,
+  }) {
+    if (negotiable) return 'Negotiable';
+
+    // Salary values are stored as numbers; SmartJob displays all salaries in
+    // the Ghanaian market currency regardless of legacy stored currency text.
+    const displayCurrency = 'GH₵';
+
+    final minValue = min is num ? min.toDouble() : null;
+    final maxValue = max is num ? max.toDouble() : null;
+
+    if ((minValue == null || minValue <= 0) &&
+        (maxValue == null || maxValue <= 0)) {
+      return 'Salary not listed';
+    }
+
+    if (minValue != null && maxValue != null && minValue > 0 && maxValue > 0) {
+      if (minValue == maxValue) {
+        return '$displayCurrency${NumberFormat('#,###').format(minValue)}';
+      }
+      return '$displayCurrency${NumberFormat('#,###').format(minValue)} - $displayCurrency${NumberFormat('#,###').format(maxValue)}';
+    }
+
+    final singleValue = (minValue != null && minValue > 0)
+        ? minValue
+        : maxValue;
+    if (singleValue == null || singleValue <= 0) {
+      return 'Salary not listed';
+    }
+    return '$displayCurrency${NumberFormat('#,###').format(singleValue)}';
+  }
+
+  static bool isAuthorizedAdminEmail(String? email) {
+    return email != null && email.trim().toLowerCase() == authorizedAdminEmail;
+  }
+
+  static bool isAuthorizedAdminUser({String? email, Object? accountType}) {
+    return isAuthorizedAdminEmail(email) &&
+        normalizeAccountType(accountType) == 'admin';
+  }
+
+  static bool isJobVisibleToJobSeekers({
+    required bool isActive,
+    String? status,
+  }) {
+    if (!isActive) return false;
+    final normalizedStatus = (status ?? '').trim().toLowerCase();
+    if (normalizedStatus.isEmpty) return true;
+    return normalizedStatus == 'approved' || normalizedStatus == 'active';
+  }
+
+  static Future<bool> isAuthorizedAdmin() async {
+    final user = _client.auth.currentUser;
+    if (user == null) return false;
+    final profile = await getProfile(user.id);
+    return isAuthorizedAdminUser(
+      email: user.email,
+      accountType:
+          profile?['account_type'] ?? user.userMetadata?['account_type'],
+    );
   }
 
   static bool isRecruiterProfile(Map<String, dynamic> profile) {
@@ -169,6 +295,109 @@ class SupabaseService {
     }
   }
 
+  static Future<void> markMessagesDelivered(String senderId) async {
+    try {
+      await _client.rpc(
+        'mark_messages_delivered',
+        params: {'p_sender_id': senderId},
+      );
+    } catch (error) {
+      debugPrint('SupabaseService: markMessagesDelivered: $error');
+    }
+  }
+
+  static Future<void> markMessagesSeen(String senderId) async {
+    try {
+      await _client.rpc(
+        'mark_messages_seen',
+        params: {'p_sender_id': senderId},
+      );
+    } catch (error) {
+      debugPrint('SupabaseService: markMessagesSeen: $error');
+    }
+  }
+
+  static Future<int> getUnreadMessageCount(String userId) async {
+    if (userId.trim().isEmpty || _client.auth.currentUser?.id != userId) {
+      return 0;
+    }
+    final response = await _client
+        .from('messages')
+        .select('id')
+        .eq('receiver_id', userId)
+        .eq('is_read', false);
+    return countUnreadMessages(
+      List<Map<String, dynamic>>.from(response),
+      userId,
+    );
+  }
+
+  static int countUnreadMessages(
+    Iterable<Map<String, dynamic>> messages,
+    String userId,
+  ) {
+    return messages
+        .where(
+          (message) =>
+              message['receiver_id'] == userId && message['is_read'] != true,
+        )
+        .length;
+  }
+
+  static String messageDeliveryStatus(Map<String, dynamic> message) {
+    if (message['_pending'] == true) return 'Sending';
+    if (message['seen_at'] != null) return 'Read';
+    if (message['delivered_at'] != null) return 'Delivered';
+    return 'Sent';
+  }
+
+  static Future<List<Map<String, dynamic>>> getConversationMessages(
+    String userId,
+    String partnerId,
+  ) async {
+    if (userId.trim().isEmpty || partnerId.trim().isEmpty) return [];
+    if (_client.auth.currentUser?.id != userId) {
+      throw StateError('Your sign-in session is no longer valid.');
+    }
+    final sent = await _client
+        .from('messages')
+        .select()
+        .eq('sender_id', userId)
+        .eq('receiver_id', partnerId);
+    final received = await _client
+        .from('messages')
+        .select()
+        .eq('sender_id', partnerId)
+        .eq('receiver_id', userId);
+    final messages = [
+      ...List<Map<String, dynamic>>.from(sent),
+      ...List<Map<String, dynamic>>.from(received),
+    ];
+    messages.sort(
+      (a, b) => (a['created_at'] as String? ?? '').compareTo(
+        b['created_at'] as String? ?? '',
+      ),
+    );
+    return messages;
+  }
+
+  static Future<Map<String, dynamic>?> getMessagingParticipant(
+    String participantId,
+  ) async {
+    try {
+      final response = await _client.rpc(
+        'get_messaging_participant',
+        params: {'participant_id': participantId},
+      );
+      if (response is List && response.isNotEmpty && response.first is Map) {
+        return Map<String, dynamic>.from(response.first as Map);
+      }
+    } catch (e) {
+      debugPrint('SupabaseService: getMessagingParticipant $e');
+    }
+    return null;
+  }
+
   static Future<List<Map<String, dynamic>>> getAllSkills() async {
     final response = await _client.from('skills').select().order('name');
     return List<Map<String, dynamic>>.from(response);
@@ -190,6 +419,79 @@ class SupabaseService {
   }
 
   // Fetch all active jobs with company details
+  static Future<List<Map<String, dynamic>>> _attachEmployerProfileData(
+    List<Map<String, dynamic>> jobs,
+  ) async {
+    final enriched = <Map<String, dynamic>>[];
+    for (final job in jobs) {
+      final item = Map<String, dynamic>.from(job);
+      final posterId = (item['poster_id'] as String?)?.trim();
+      String? companyName;
+      String? logoUrl;
+
+      if (posterId != null && posterId.isNotEmpty) {
+        try {
+          final employerProfile = await getEmployerProfile(posterId);
+          companyName =
+              (employerProfile?['company_name'] as String?) ??
+              (item['company_name'] as String?);
+          logoUrl =
+              (employerProfile?['logo_url'] as String?) ??
+              (item['company_logo_url'] as String?);
+
+          if (companyName != null && companyName.trim().isNotEmpty) {
+            item['company_name'] = companyName.trim();
+          }
+          if (logoUrl != null && logoUrl.trim().isNotEmpty) {
+            item['company_logo_url'] = logoUrl.trim();
+          }
+
+          if (employerProfile != null) {
+            final normalizedCompanyName =
+                ((employerProfile['company_name'] as String?) ??
+                        companyName ??
+                        '')
+                    .trim();
+            final normalizedLogoUrl =
+                ((employerProfile['logo_url'] as String?) ?? logoUrl ?? '')
+                    .trim();
+            item['companies'] = {
+              'name': normalizedCompanyName,
+              'logo_url': normalizedLogoUrl,
+              'industry': employerProfile['industry'],
+              'average_rating': employerProfile['average_rating'],
+            };
+          }
+        } catch (_) {
+          debugPrint(
+            'SupabaseService: job employer enrichment failed for $posterId',
+          );
+        }
+      }
+
+      if (companyName == null || companyName.trim().isEmpty) {
+        companyName =
+            (item['companies'] as Map<String, dynamic>?)?['name'] as String? ??
+            (item['company_name'] as String?) ??
+            'Company';
+      }
+      if (logoUrl == null || logoUrl.trim().isEmpty) {
+        logoUrl =
+            (item['companies'] as Map<String, dynamic>?)?['logo_url']
+                as String? ??
+            (item['company_logo_url'] as String?);
+      }
+
+      item['company_name'] ??= companyName;
+      item['company_logo_url'] ??= logoUrl;
+      item['companies'] ??= {'name': companyName, 'logo_url': logoUrl};
+
+      enriched.add(item);
+    }
+
+    return enriched;
+  }
+
   static Future<List<Map<String, dynamic>>> getJobs({
     String? workModel,
     String? experienceLevel,
@@ -204,16 +506,10 @@ class SupabaseService {
     var query = _client
         .from('jobs')
         .select('''
-          *,
-          companies (
-            id,
-            name,
-            logo_url,
-            industry,
-            average_rating
-          )
+          *
         ''')
-        .eq('is_active', true);
+        .eq('is_active', true)
+        .eq('approval_status', 'approved');
 
     if (workModel != null && workModel != 'all') {
       query = query.eq('work_model', workModel);
@@ -233,6 +529,7 @@ class SupabaseService {
 
     final response = await query.order('created_at', ascending: false);
     var jobs = List<Map<String, dynamic>>.from(response);
+    jobs = await _attachEmployerProfileData(jobs);
 
     if (industry != null && industry.trim().isNotEmpty) {
       final ind = industry.trim().toLowerCase();
@@ -407,8 +704,7 @@ class SupabaseService {
             recruiter:recruiter_id (
               id,
               full_name,
-              headline,
-              company_name,
+              job_title,
               profile_photo_url
             )
           ''')
@@ -454,9 +750,7 @@ class SupabaseService {
 
       final profiles = await _client
           .from('profiles')
-          .select(
-            'id, full_name, headline, company_name, profile_photo_url, account_type',
-          )
+          .select('id, full_name, job_title, profile_photo_url, account_type')
           .inFilter('id', senderIds.toList());
 
       final recruiterIds = profiles
@@ -520,18 +814,68 @@ class SupabaseService {
   }
 
   static Future<Map<String, dynamic>?> getEmployerProfile(String userId) async {
+    debugPrint(
+      '[EMPLOYER PROFILE] Query userId=$userId table=employer_profiles',
+    );
     final response = await _client
         .from('employer_profiles')
         .select()
         .eq('user_id', userId)
         .maybeSingle();
+    debugPrint(
+      '[EMPLOYER PROFILE] Query result=${response == null ? 'missing' : 'found'}',
+    );
     return response;
+  }
+
+  static Future<Map<String, dynamic>?> getJobSeekerProfile(
+    String userId,
+  ) async {
+    debugPrint(
+      '[JOB SEEKER PROFILE] Query userId=$userId table=job_seeker_profiles',
+    );
+    final response = await _client
+        .from('job_seeker_profiles')
+        .select()
+        .eq('user_id', userId)
+        .maybeSingle();
+    debugPrint(
+      '[JOB SEEKER PROFILE] Query result=${response == null ? 'missing' : 'found'}',
+    );
+    return response;
+  }
+
+  static Future<Map<String, dynamic>?> getJobSeekerProfileContext(
+    String userId,
+  ) async {
+    final profile = await getProfile(userId);
+    final preferences = await getJobSeekerProfile(userId);
+    if (profile == null) return null;
+    return {...profile, ...?preferences};
+  }
+
+  static Future<Map<String, dynamic>> upsertJobSeekerProfile(
+    String userId,
+    Map<String, dynamic> data,
+  ) async {
+    debugPrint(
+      '[JOB SEEKER PROFILE] UPSERT userId=$userId fields=${data.keys.join(', ')}',
+    );
+    final response = await _client
+        .from('job_seeker_profiles')
+        .upsert({'user_id': userId, ...data}, onConflict: 'user_id')
+        .select()
+        .single();
+    return Map<String, dynamic>.from(response);
   }
 
   static Future<Map<String, dynamic>> createEmployerProfile(
     String userId,
     Map<String, dynamic> data,
   ) async {
+    debugPrint(
+      '[EMPLOYER PROFILE] INSERT userId=$userId fields=${data.keys.join(', ')}',
+    );
     final response = await _client
         .from('employer_profiles')
         .insert({'user_id': userId, ...data})
@@ -544,6 +888,9 @@ class SupabaseService {
     String userId,
     Map<String, dynamic> data,
   ) async {
+    debugPrint(
+      '[EMPLOYER PROFILE] UPDATE userId=$userId fields=${data.keys.join(', ')}',
+    );
     final response = await _client
         .from('employer_profiles')
         .upsert({'user_id': userId, ...data}, onConflict: 'user_id')
@@ -553,8 +900,8 @@ class SupabaseService {
   }
 
   // Create user profile (called during signup or if missing).
-  // Keep the profile role normalized to the app's supported values and
-  // persist the auth email so the profile row stays in sync with auth.users.
+  // Keep the profile role normalized to the app's supported values. Auth email
+  // remains authoritative in auth.users rather than being duplicated here.
   static Future<void> createProfile(
     String userId, {
     String? email,
@@ -566,11 +913,8 @@ class SupabaseService {
       final normalizedAccountType = accountType != null
           ? normalizeAccountType(accountType)
           : 'job_seeker';
-      final normalizedEmail = (email ?? '').trim();
-
       await _client.from('profiles').insert({
         'id': userId,
-        if (normalizedEmail.isNotEmpty) 'email': normalizedEmail,
         if (fullName != null && fullName.trim().isNotEmpty)
           'full_name': fullName.trim(),
         'account_type': normalizedAccountType,
@@ -780,14 +1124,66 @@ class SupabaseService {
     String jobId,
     String? coverLetter, {
     String? resumeUrl,
+    int? matchScore,
     Map<String, dynamic>? profileSnapshot,
   }) async {
     try {
       debugPrint('SupabaseService: Applying for job $jobId with user $userId');
 
-      // FIX: Check if profile exists before applying
-      // This prevents FK constraint violation: "applications_user_id_fkey"
+      final currentUser = _client.auth.currentUser;
+      if (currentUser == null || currentUser.id != userId) {
+        throw StateError('Your sign-in session is no longer valid.');
+      }
+
       final profile = await getProfile(userId);
+      final accountType = normalizeAccountType(
+        profile?['account_type'] ??
+            _client.auth.currentUser?.userMetadata?['account_type'],
+      );
+      if (!isApplicationAllowed(
+        rawAccountType: accountType,
+        emailConfirmedAt: currentUser.emailConfirmedAt,
+      )) {
+        if (!isEmailConfirmed(currentUser)) {
+          throw StateError('Please verify your email before applying.');
+        }
+        throw StateError('Only job seekers can apply for jobs.');
+      }
+
+      // Check if user has already applied to this job
+      final existingApplication = await _client
+          .from('applications')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('job_id', jobId)
+          .limit(1)
+          .maybeSingle();
+
+      if (existingApplication != null) {
+        throw StateError('You have already applied for this job.');
+      }
+
+      final jobRow = await _client
+          .from('jobs')
+          .select('id, is_active, approval_status, title')
+          .eq('id', jobId)
+          .maybeSingle();
+      if (jobRow == null) {
+        throw StateError('Job not found.');
+      }
+      final isActive = jobRow['is_active'] as bool? ?? false;
+      final approvalStatus =
+          (jobRow['approval_status'] as String?) ?? 'pending';
+      final jobTitle = jobRow['title'] as String? ?? 'job';
+
+      if (approvalStatus != 'approved') {
+        throw StateError('This job is not currently accepting applications.');
+      }
+
+      if (!isJobVisibleToJobSeekers(isActive: isActive)) {
+        throw StateError('This job is not available for applications.');
+      }
+
       if (profile == null) {
         debugPrint(
           'SupabaseService: Profile not found for user $userId, attempting to create',
@@ -795,17 +1191,39 @@ class SupabaseService {
         await createProfile(userId);
       }
 
-      await _client.from('applications').insert({
+      final applicationData = {
         'user_id': userId,
         'job_id': jobId,
         'cover_letter': coverLetter,
-        if (resumeUrl != null) 'resume_url': resumeUrl,
-        if (profileSnapshot != null) 'profile_snapshot': profileSnapshot,
+        if (matchScore != null) 'match_score': matchScore,
         'status': 'applied',
-      });
-      debugPrint('SupabaseService: Application submitted successfully');
+        'applied_at': DateTime.now().toIso8601String(),
+      };
+      debugPrint(
+        '[EASY APPLY] Inserting application for job "$jobTitle" with fields: ${applicationData.keys.join(', ')}',
+      );
+      if (profileSnapshot != null) {
+        debugPrint(
+          '[EASY APPLY] Profile snapshot keys=${profileSnapshot.keys.join(', ')} (not persisted)',
+        );
+      }
+      final insertedApplication = await _client
+          .from('applications')
+          .insert(applicationData)
+          .select('id, user_id, job_id')
+          .single();
+      if (insertedApplication['id'] == null ||
+          insertedApplication['user_id'] != userId ||
+          insertedApplication['job_id'] != jobId) {
+        throw StateError('Application creation could not be verified.');
+      }
+      debugPrint(
+        '[EASY APPLY] Application submitted successfully for jobId: $jobId, userId: $userId',
+      );
     } catch (e) {
-      debugPrint('SupabaseService: Error applying for job: $e');
+      debugPrint(
+        'SupabaseService: Error applying for job: ${describeSupabaseError(e)}',
+      );
       rethrow;
     }
   }
@@ -840,14 +1258,149 @@ class SupabaseService {
     }
   }
 
-  static Future<void> updateApplicationStatus(
+  static Future<Map<String, dynamic>> updateApplicationStatus(
     String applicationId,
-    String status,
+    String status, {
+    required String employerId,
+  }) async {
+    if (_client.auth.currentUser?.id != employerId) {
+      throw StateError('Your sign-in session is no longer valid.');
+    }
+    if (!isValidApplicationStatus(status)) {
+      throw ArgumentError('Unsupported application status.');
+    }
+    debugPrint(
+      '[EMPLOYER STATUS] employerId=$employerId applicationId=$applicationId requestedStatus=$status',
+    );
+    final response = await _client.rpc(
+      'employer_dashboard_update_application_status',
+      params: {'p_application_id': applicationId, 'p_status': status},
+    );
+    debugPrint('[EMPLOYER STATUS] rpcResponse=$response');
+    final rows = response is List ? response : [response];
+    if (rows.isEmpty || rows.first is! Map) {
+      throw StateError('Application status was not updated.');
+    }
+    return Map<String, dynamic>.from(rows.first as Map);
+  }
+
+  static bool isValidApplicationStatus(String status) {
+    return const {
+      'applied',
+      'reviewing',
+      'interviewing',
+      'offered',
+      'rejected',
+      'declined',
+    }.contains(status.trim().toLowerCase());
+  }
+
+  static bool canMessageBetweenRoles(String senderRole, String receiverRole) {
+    const allowed = {'employer', 'job_seeker'};
+    return allowed.contains(normalizeAccountType(senderRole)) &&
+        allowed.contains(normalizeAccountType(receiverRole)) &&
+        normalizeAccountType(senderRole) != normalizeAccountType(receiverRole);
+  }
+
+  static Future<Map<String, int>> getApplicationStatusCountsForEmployer(
+    String employerId,
   ) async {
-    await _client
+    final jobs = await _client
+        .from('jobs')
+        .select('id')
+        .eq('poster_id', employerId);
+    final jobIds = (jobs as List)
+        .map((job) => job['id']?.toString())
+        .whereType<String>()
+        .toList();
+    final counts = {
+      'all': 0,
+      'applied': 0,
+      'interviewing': 0,
+      'offered': 0,
+      'declined': 0,
+    };
+    if (jobIds.isEmpty) return counts;
+    final applications = await _client
         .from('applications')
-        .update({'status': status})
-        .eq('id', applicationId);
+        .select('status')
+        .inFilter('job_id', jobIds);
+    for (final application in applications as List) {
+      final status = application['status']?.toString() ?? 'applied';
+      counts['all'] = counts['all']! + 1;
+      if (counts.containsKey(status)) counts[status] = counts[status]! + 1;
+    }
+    return counts;
+  }
+
+  static Future<List<Map<String, dynamic>>> getApplicationsForEmployer(
+    String employerId,
+  ) async {
+    final jobs = await _client
+        .from('jobs')
+        .select('id')
+        .eq('poster_id', employerId);
+    final jobIds = (jobs as List)
+        .map((job) => job['id']?.toString())
+        .whereType<String>()
+        .toList();
+    if (jobIds.isEmpty) return [];
+    final response = await _client
+        .from('applications')
+        .select('''
+          id,
+          user_id,
+          job_id,
+          cover_letter,
+          match_score,
+          status,
+          applied_at,
+          jobs (
+            id,
+            title,
+            poster_id
+          ),
+          profiles:user_id (
+            id,
+            full_name,
+            job_title,
+            location,
+            bio,
+            profile_photo_url,
+            resume_url
+          )
+        ''')
+        .inFilter('job_id', jobIds)
+        .order('applied_at', ascending: false);
+    return List<Map<String, dynamic>>.from(response);
+  }
+
+  static Future<Map<String, dynamic>> sendMessage({
+    required String senderId,
+    required String receiverId,
+    required String content,
+  }) async {
+    final currentUserId = _client.auth.currentUser?.id;
+    if (currentUserId == null || currentUserId != senderId) {
+      throw StateError('Your sign-in session is no longer valid.');
+    }
+    debugPrint(
+      '[EMPLOYER MESSAGE] senderId=$senderId receiverId=$receiverId operation=employer_dashboard_send_message',
+    );
+    final response = await _client.rpc(
+      'employer_dashboard_send_message',
+      params: {'p_receiver_id': receiverId, 'p_content': content},
+    );
+    debugPrint('[EMPLOYER MESSAGE] rpcResponse=$response');
+    if (response is! Map) {
+      throw StateError('Message creation could not be verified.');
+    }
+    final message = Map<String, dynamic>.from(response);
+    if (message['sender_id'] != senderId ||
+        message['receiver_id'] != receiverId) {
+      throw StateError('Message creation could not be verified.');
+    }
+    return message;
   }
 
   // ── Employer / reverse search ───────────────────────────────────────────
@@ -862,7 +1415,6 @@ class SupabaseService {
         .select('''
           id,
           full_name,
-          headline,
           job_title,
           location,
           years_of_experience,
@@ -930,18 +1482,7 @@ class SupabaseService {
       debugPrint('SupabaseService: candidate_interests insert $e');
     }
 
-    try {
-      await _client.from('notifications').insert({
-        'user_id': candidateId,
-        'type': 'recruiter_interest',
-        'title': 'Recruiter expressed interest',
-        'body': message ?? 'A recruiter wants to connect about opportunities.',
-        'data': {'recruiter_id': recruiterId},
-        'is_read': false,
-      });
-    } catch (e) {
-      debugPrint('SupabaseService: recruiter notification $e');
-    }
+    // Notification creation is server-side via the candidate_interests trigger.
   }
 
   static Future<bool> hasExpressedInterestInCandidate(
@@ -975,21 +1516,23 @@ class SupabaseService {
     Map<String, dynamic> job,
   ) async {
     try {
-      debugPrint('SupabaseService: Creating job for user $userId');
+      final currentUserId = Supabase.instance.client.auth.currentUser!.id;
 
-      final payload = {
-        'poster_id': userId,
+      final Map<String, dynamic> payload = {
+        'poster_id': currentUserId,
         'title': job['title'],
-        'company_name': job['company_name'],
         'location': job['location'],
         'description': job['description'],
         'employment_type': job['employment_type'],
         'work_model': job['work_model'],
         'salary_min': job['salary_min'],
         'salary_max': job['salary_max'],
-        'is_active': job['is_active'] ?? true,
-        'created_at': DateTime.now().toIso8601String(),
+        'salary_currency': 'GHS',
+        'approval_status': 'pending',
+        'is_active': false,
       };
+
+      debugPrint('SupabaseService: jobs insert payload: $payload');
 
       final response = await _client
           .from('jobs')
@@ -1002,7 +1545,32 @@ class SupabaseService {
         throw Exception('Failed to create job: empty response');
       }
 
-      return Map<String, dynamic>.from(response);
+      final createdJob = Map<String, dynamic>.from(response);
+      final createdJobId = createdJob['id']?.toString();
+      if (createdJobId == null || createdJobId.isEmpty) {
+        throw StateError('Job was created without a database ID.');
+      }
+      final persistedJob = await _client
+          .from('jobs')
+          .select('id, approval_status, is_active')
+          .eq('id', createdJobId)
+          .maybeSingle();
+      if (persistedJob == null) {
+        throw StateError('Job creation could not be verified.');
+      }
+      if (persistedJob['approval_status'] != 'pending' ||
+          persistedJob['is_active'] != false) {
+        throw StateError('New jobs must start pending and inactive.');
+      }
+      debugPrint('SupabaseService: jobs insert returned row: $createdJob');
+      return createdJob;
+    } on PostgrestException catch (error) {
+      debugPrint('SupabaseService: createJob PostgREST error');
+      debugPrint('message: ${error.message}');
+      debugPrint('code: ${error.code}');
+      debugPrint('details: ${error.details}');
+      debugPrint('hint: ${error.hint}');
+      rethrow;
     } catch (e) {
       debugPrint('SupabaseService: Error creating job: $e');
       rethrow;
@@ -1027,16 +1595,13 @@ class SupabaseService {
       final response = await _client
           .from('jobs')
           .select('''
-            *,
-            companies (
-              id,
-              name,
-              logo_url
-            )
+            *
           ''')
           .eq('poster_id', posterId)
           .order('created_at', ascending: false);
-      return List<Map<String, dynamic>>.from(response);
+      return await _attachEmployerProfileData(
+        List<Map<String, dynamic>>.from(response),
+      );
     } catch (e) {
       debugPrint('SupabaseService: getJobsByPoster $e');
       return [];
@@ -1094,15 +1659,16 @@ class SupabaseService {
       final jobIds = (jobs as List).map((j) => j['id'] as String).toList();
       if (jobIds.isEmpty) return [];
 
-      final inClause = jobIds.map((id) => "'$id'").join(',');
+      // Use PostgREST's in filter with proper syntax
       final response = await _client
           .from('applications')
           .select('''
             id,
-            created_at,
+            applied_at,
             status,
             job_id,
             user_id,
+            cover_letter,
             jobs (
               id,
               title
@@ -1113,13 +1679,13 @@ class SupabaseService {
               job_title
             )
           ''')
-          .filter('job_id', 'in', '($inClause)')
-          .order('created_at', ascending: false)
+          .inFilter('job_id', jobIds)
+          .order('applied_at', ascending: false)
           .limit(limit);
       return List<Map<String, dynamic>>.from(response);
     } catch (e) {
-      debugPrint('SupabaseService: getRecentApplicationsForPoster $e');
-      return [];
+      debugPrint('SupabaseService: getRecentApplicationsForPoster error: $e');
+      rethrow;
     }
   }
 
@@ -1152,6 +1718,272 @@ class SupabaseService {
     } catch (e) {
       debugPrint('SupabaseService: uploadCompanyLogo $e');
       return null;
+    }
+  }
+
+  // ── Admin Management Methods ────────────────────────────────────────────
+
+  static Future<List<Map<String, dynamic>>> getAllJobsForAdmin() async {
+    try {
+      debugPrint('SupabaseService: Querying getAllJobsForAdmin');
+      // Query jobs WITHOUT join first (to avoid join failures)
+      final response = await _client
+          .from('jobs')
+          .select('''
+            id,
+            title,
+            description,
+            location,
+            work_model,
+            employment_type,
+            experience_level,
+            salary_min,
+            salary_max,
+            salary_currency,
+            approval_status,
+            is_active,
+            created_at,
+            updated_at,
+            poster_id,
+            approved_at,
+            approved_by,
+            rejection_reason
+          ''')
+          .order('created_at', ascending: false);
+
+      final jobs = List<Map<String, dynamic>>.from(response);
+      debugPrint(
+        'SupabaseService: getAllJobsForAdmin returned ${jobs.length} jobs',
+      );
+
+      // Enrich with employer profile data separately
+      for (final job in jobs) {
+        final posterId = job['poster_id'] as String?;
+        if (posterId != null && posterId.isNotEmpty) {
+          try {
+            final profile = await getProfile(posterId);
+            if (profile != null) {
+              job['employer'] = {
+                'id': profile['id'],
+                'full_name': profile['full_name'],
+                'account_type': profile['account_type'],
+              };
+            }
+          } catch (e) {
+            debugPrint(
+              'SupabaseService: Failed to fetch employer profile for $posterId: $e',
+            );
+          }
+        }
+      }
+
+      return jobs;
+    } catch (e) {
+      debugPrint('SupabaseService: getAllJobsForAdmin ERROR: $e');
+      rethrow; // Let caller see the actual error
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> getJobsByApprovalStatus(
+    String status,
+  ) async {
+    try {
+      debugPrint('SupabaseService: Querying jobs by approval_status=$status');
+      final response = await _client
+          .from('jobs')
+          .select('''
+            id,
+            title,
+            location,
+            work_model,
+            employment_type,
+            salary_min,
+            salary_max,
+            approval_status,
+            is_active,
+            created_at,
+            poster_id
+          ''')
+          .eq('approval_status', status)
+          .order('created_at', ascending: false);
+
+      final jobs = List<Map<String, dynamic>>.from(response);
+      debugPrint(
+        'SupabaseService: getJobsByApprovalStatus returned ${jobs.length} jobs',
+      );
+
+      // Enrich with employer profile data
+      for (final job in jobs) {
+        final posterId = job['poster_id'] as String?;
+        if (posterId != null && posterId.isNotEmpty) {
+          try {
+            final profile = await getProfile(posterId);
+            if (profile != null) {
+              job['employer'] = {
+                'id': profile['id'],
+                'full_name': profile['full_name'],
+              };
+            }
+          } catch (e) {
+            debugPrint(
+              'SupabaseService: Failed to fetch employer profile for $posterId: $e',
+            );
+          }
+        }
+      }
+
+      return jobs;
+    } catch (e) {
+      debugPrint('SupabaseService: getJobsByApprovalStatus($status) ERROR: $e');
+      rethrow;
+    }
+  }
+
+  static Future<Map<String, dynamic>?> getJobForReview(String jobId) async {
+    try {
+      debugPrint('SupabaseService: Querying job for review: $jobId');
+      final response = await _client
+          .from('jobs')
+          .select('*')
+          .eq('id', jobId)
+          .maybeSingle();
+
+      if (response == null) {
+        debugPrint('SupabaseService: Job not found: $jobId');
+        return null;
+      }
+
+      final job = Map<String, dynamic>.from(response);
+
+      // Fetch employer profile
+      final posterId = job['poster_id'] as String?;
+      if (posterId != null && posterId.isNotEmpty) {
+        try {
+          final profile = await getProfile(posterId);
+          if (profile != null) {
+            job['employer'] = {
+              'id': profile['id'],
+              'full_name': profile['full_name'],
+              'account_type': profile['account_type'],
+            };
+          }
+        } catch (e) {
+          debugPrint(
+            'SupabaseService: Failed to fetch employer profile for $posterId: $e',
+          );
+        }
+      }
+
+      // Fetch applications for this job
+      try {
+        final apps = await _client
+            .from('applications')
+            .select('id, user_id, status, applied_at')
+            .eq('job_id', jobId);
+        job['applications'] = List<Map<String, dynamic>>.from(apps);
+      } catch (e) {
+        debugPrint(
+          'SupabaseService: Failed to fetch applications for job $jobId: $e',
+        );
+        job['applications'] = [];
+      }
+
+      return job;
+    } catch (e) {
+      debugPrint('SupabaseService: getJobForReview ERROR: $e');
+      rethrow;
+    }
+  }
+
+  static Future<void> approveJob(String jobId, String approvedByUserId) async {
+    try {
+      await _client
+          .from('jobs')
+          .update({
+            'approval_status': 'approved',
+            'is_active': true,
+            'approved_at': DateTime.now().toIso8601String(),
+            'approved_by': approvedByUserId,
+            'rejection_reason': null,
+          })
+          .eq('id', jobId);
+      debugPrint('SupabaseService: Job $jobId approved');
+    } catch (e) {
+      debugPrint('SupabaseService: approveJob error $e');
+      rethrow;
+    }
+  }
+
+  static Future<void> rejectJob(String jobId, String rejectionReason) async {
+    try {
+      await _client
+          .from('jobs')
+          .update({
+            'approval_status': 'rejected',
+            'is_active': false,
+            'rejection_reason': rejectionReason,
+          })
+          .eq('id', jobId);
+      debugPrint('SupabaseService: Job $jobId rejected');
+    } catch (e) {
+      debugPrint('SupabaseService: rejectJob error $e');
+      rethrow;
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> getAllProfiles() async {
+    try {
+      final currentUser = _client.auth.currentUser;
+      if (currentUser != null && isAuthorizedAdminEmail(currentUser.email)) {
+        try {
+          final response = await _client.rpc('get_admin_user_directory');
+          if (response is List) {
+            return List<Map<String, dynamic>>.from(response);
+          }
+        } catch (e) {
+          debugPrint('SupabaseService: get_admin_user_directory fallback $e');
+        }
+      }
+
+      final response = await _client
+          .from('profiles')
+          .select('id, full_name, account_type, created_at')
+          .order('created_at', ascending: false);
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      debugPrint('SupabaseService: getAllProfiles $e');
+      rethrow;
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> getAllApplications() async {
+    try {
+      final response = await _client
+          .from('applications')
+          .select('''
+            id,
+            user_id,
+            job_id,
+            status,
+            cover_letter,
+            match_score,
+            applied_at,
+            updated_at,
+            profiles!applications_user_id_fkey (
+              id,
+              full_name,
+              job_title
+            ),
+            jobs (
+              id,
+              title
+            )
+          ''')
+          .order('applied_at', ascending: false);
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      debugPrint('SupabaseService: getAllApplications $e');
+      rethrow;
     }
   }
 }

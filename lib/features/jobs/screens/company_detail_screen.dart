@@ -8,11 +8,7 @@ class CompanyDetailScreen extends StatefulWidget {
   final Map<String, dynamic> company;
   final String? industry;
 
-  const CompanyDetailScreen({
-    super.key,
-    required this.company,
-    this.industry,
-  });
+  const CompanyDetailScreen({super.key, required this.company, this.industry});
 
   @override
   State<CompanyDetailScreen> createState() => _CompanyDetailScreenState();
@@ -101,9 +97,7 @@ class _CompanyDetailScreenState extends State<CompanyDetailScreen> {
                           const SizedBox(height: 6),
                           Text(
                             industry,
-                            style: TextStyle(
-                              color: AppColors.textSec(context),
-                            ),
+                            style: TextStyle(color: AppColors.textSec(context)),
                           ),
                         ],
                         const SizedBox(height: 12),
@@ -169,7 +163,7 @@ class _CompanyDetailScreenState extends State<CompanyDetailScreen> {
                             label: 'Promotion timeline',
                             value:
                                 _growthPath!['promotion_timeline'] as String? ??
-                                    '',
+                                '',
                           ),
                           _GrowthRow(
                             label: 'Company growth',
@@ -179,7 +173,7 @@ class _CompanyDetailScreenState extends State<CompanyDetailScreen> {
                             label: 'Internal mobility',
                             value:
                                 _growthPath!['internal_mobility'] as String? ??
-                                    '',
+                                '',
                           ),
                           const SizedBox(height: 8),
                           Wrap(
@@ -339,10 +333,7 @@ class _GrowthRow extends StatelessWidget {
             width: 130,
             child: Text(
               label,
-              style: TextStyle(
-                fontSize: 13,
-                color: AppColors.textSec(context),
-              ),
+              style: TextStyle(fontSize: 13, color: AppColors.textSec(context)),
             ),
           ),
           Expanded(

@@ -93,12 +93,13 @@ class _ResumeScreenState extends State<ResumeScreen> {
       if (draft != null && mounted) {
         _draftController.text = draft;
         await _saveDraft();
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
               AiService.isConfigured
                   ? 'AI resume draft generated'
-                  : 'Add OPENAI_API_KEY to .env for AI generation',
+                  : 'AI service is unavailable. Please try again later.',
             ),
             backgroundColor: AppColors.success,
           ),
@@ -145,9 +146,9 @@ class _ResumeScreenState extends State<ResumeScreen> {
     } catch (e) {
       setState(() => _isUploading = false);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Import failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Import failed: $e')));
       }
     }
   }
@@ -206,9 +207,9 @@ class _ResumeScreenState extends State<ResumeScreen> {
     } catch (e) {
       setState(() => _isUploading = false);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Link import failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Link import failed: $e')));
       }
     }
   }
@@ -304,7 +305,7 @@ class _ResumeScreenState extends State<ResumeScreen> {
           SnackBar(
             content: Text(
               isRls
-                  ? 'Resume upload blocked by storage RLS (403). Check Supabase bucket `resumes` policies (and file path prefix like `<auth.uid()>/...`).'
+                  ? 'Resume upload blocked by storage RLS (403). Check the `resumes` bucket policies.'
                   : 'Failed to upload resume: $details',
             ),
             backgroundColor: AppColors.error,
@@ -344,6 +345,28 @@ class _ResumeScreenState extends State<ResumeScreen> {
         );
         return;
       }
+
+      // Delete the actual file from Supabase Storage
+      try {
+        // Try to delete resume.pdf, resume.doc, and resume.docx
+        for (final ext in ['pdf', 'doc', 'docx']) {
+          final fileName = '$userId/resume.$ext';
+          try {
+            await Supabase.instance.client.storage.from('resumes').remove([
+              fileName,
+            ]);
+            debugPrint('Deleted storage file: $fileName');
+          } catch (e) {
+            // File might not exist, continue
+            debugPrint('Could not delete $fileName: $e');
+          }
+        }
+      } catch (e) {
+        debugPrint('Error deleting storage files: $e');
+        // Continue anyway - clear the database reference
+      }
+
+      // Clear the resume URL from the database
       await SupabaseService.updateProfile(userId, {
         'resume_url': null,
         'updated_at': DateTime.now().toIso8601String(),
@@ -684,7 +707,9 @@ class _ResumeScreenState extends State<ResumeScreen> {
                           _saveDraft();
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: Text('${template.name} template applied'),
+                              content: Text(
+                                '${template.name} template applied',
+                              ),
                               duration: const Duration(seconds: 1),
                             ),
                           );

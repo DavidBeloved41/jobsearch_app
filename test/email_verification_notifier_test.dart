@@ -16,6 +16,11 @@ class FakeEmailVerificationRepository implements EmailVerificationRepository {
       throw const AuthException('Unable to resend verification email');
     }
   }
+
+  @override
+  Future<AuthResponse> verifyVerificationCode(String email, String code) {
+    throw UnimplementedError();
+  }
 }
 
 void main() {

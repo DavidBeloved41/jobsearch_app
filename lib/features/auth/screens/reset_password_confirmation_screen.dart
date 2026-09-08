@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../app/router.dart';
 import '../../../core/auth/password_recovery_notifier.dart';
 import '../../../core/auth/password_recovery_state.dart';
 import '../../../core/theme/app_colors.dart';
@@ -45,6 +48,20 @@ class _ResetPasswordConfirmationScreenState
     await ref
         .read(passwordRecoveryProvider.notifier)
         .resetPassword(_passwordController.text);
+
+    if (!mounted) return;
+    final resetState = ref.read(passwordRecoveryProvider);
+    if (resetState.resetSuccess) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Password changed successfully. Please sign in again.'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+      ref.read(passwordRecoveryProvider.notifier).clear();
+      await Supabase.instance.client.auth.signOut();
+      if (mounted) context.go(AppRoutes.login);
+    }
   }
 
   @override
@@ -247,11 +264,14 @@ class _ResetPasswordConfirmationScreenState
         ),
         const SizedBox(height: 32),
         ElevatedButton(
-          onPressed: () {
+          onPressed: () async {
+            final currentContext = context;
             ref.read(passwordRecoveryProvider.notifier).clear();
-            Navigator.of(context).popUntil((route) => route.isFirst);
+            await Supabase.instance.client.auth.signOut();
+            if (!currentContext.mounted) return;
+            currentContext.go(AppRoutes.login);
           },
-          child: const Text('Back to sign in'),
+          child: const Text('Continue to sign in'),
         ),
       ],
     );

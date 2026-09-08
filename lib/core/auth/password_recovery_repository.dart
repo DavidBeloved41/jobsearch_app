@@ -1,5 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'auth_redirects.dart';
+
 abstract class PasswordRecoveryRepository {
   Future<void> sendResetEmail(String email);
   Future<void> updatePassword(String password);
@@ -15,7 +17,7 @@ class SupabasePasswordRecoveryRepository implements PasswordRecoveryRepository {
   Future<void> sendResetEmail(String email) {
     return _client.auth.resetPasswordForEmail(
       email.trim(),
-      redirectTo: 'smartjob://reset-password',
+      redirectTo: AppAuthRedirects.resetPasswordCallback,
     );
   }
 

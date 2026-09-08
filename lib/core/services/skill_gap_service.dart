@@ -1,4 +1,5 @@
 import '../supabase/supabase_service.dart';
+import 'resume_text_service.dart';
 
 class SkillGapItem {
   final String name;
@@ -27,71 +28,136 @@ class SkillGapResult {
 }
 
 class SkillGapService {
-  static Future<SkillGapResult> analyze(String userId) async {
-    final userSkillNames = (await SupabaseService.getUserSkillNames(userId))
-        .map((s) => s.toLowerCase())
-        .toSet();
-
-    final jobs = await SupabaseService.getJobs();
+  static Future<SkillGapResult> analyze(
+    String userId, {
+    Map<String, dynamic>? targetJob,
+  }) async {
+    final userSkills = (await SupabaseService.getUserSkillNames(
+      userId,
+    )).map(_normalize).toSet();
+    final profile = await SupabaseService.getProfile(userId);
+    final resumeText = await ResumeTextService.fromProfile(profile);
+    final candidateText = _normalize(
+      [...userSkills, resumeText ?? ''].join(' '),
+    );
+    final jobs = targetJob == null
+        ? await SupabaseService.getJobs()
+        : [targetJob];
     final allSkills = await SupabaseService.getAllSkills();
-
-    final demand = <String, int>{};
     final categories = <String, String>{};
-
     for (final skill in allSkills) {
-      final name = (skill['name'] as String? ?? '').trim();
-      if (name.isEmpty) continue;
-      categories[name.toLowerCase()] =
-          skill['category'] as String? ?? 'General';
+      final name = skill['name'] as String? ?? '';
+      if (name.trim().isNotEmpty) {
+        categories[_normalize(name)] =
+            skill['category'] as String? ?? 'General';
+      }
     }
 
-    for (final job in jobs) {
-      final text = [
-        job['title'] as String? ?? '',
-        job['description'] as String? ?? '',
-      ].join(' ').toLowerCase();
+    if (targetJob != null) {
+      final missing = <SkillGapItem>[];
+      final matched = <SkillGapItem>[];
+      for (final name in _requiredSkills(targetJob, allSkills)) {
+        final normalized = _normalize(name);
+        final item = SkillGapItem(
+          name: name,
+          category: categories[normalized] ?? 'General',
+          demandCount: 1,
+          isMissing: !candidateText.contains(normalized),
+        );
+        (item.isMissing ? missing : matched).add(item);
+      }
+      return SkillGapResult(
+        missingSkills: missing,
+        matchedSkills: matched,
+        jobsAnalyzed: 1,
+      );
+    }
 
+    final demand = <String, int>{};
+    for (final job in jobs) {
+      final text = _normalize(
+        [
+          job['title'] as String? ?? '',
+          job['description'] as String? ?? '',
+          job['qualifications'] as String? ?? '',
+          job['requirements'] as String? ?? '',
+        ].join(' '),
+      );
       for (final skill in allSkills) {
-        final name = (skill['name'] as String? ?? '').trim();
-        if (name.length < 2) continue;
-        if (text.contains(name.toLowerCase())) {
-          final key = name.toLowerCase();
-          demand[key] = (demand[key] ?? 0) + 1;
+        final name = skill['name'] as String? ?? '';
+        final normalized = _normalize(name);
+        if (normalized.length >= 2 && text.contains(normalized)) {
+          demand[normalized] = (demand[normalized] ?? 0) + 1;
         }
       }
     }
 
-    final sortedDemand = demand.entries.toList()
+    final entries = demand.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
-
     final missing = <SkillGapItem>[];
     final matched = <SkillGapItem>[];
-
-    for (final entry in sortedDemand) {
-      if (entry.value < 1) continue;
+    for (final entry in entries) {
       final displayName = allSkills
-          .map((s) => s['name'] as String? ?? '')
+          .map((skill) => skill['name'] as String? ?? '')
           .firstWhere(
-            (n) => n.toLowerCase() == entry.key,
+            (name) => _normalize(name) == entry.key,
             orElse: () => entry.key,
           );
       final item = SkillGapItem(
         name: displayName,
         category: categories[entry.key] ?? 'General',
         demandCount: entry.value,
-        isMissing: !userSkillNames.contains(entry.key),
+        isMissing: !candidateText.contains(entry.key),
       );
-      if (item.isMissing) {
-        missing.add(item);
-      } else {
-        matched.add(item);
-      }
+      (item.isMissing ? missing : matched).add(item);
     }
-
     return SkillGapResult(
       missingSkills: missing.take(15).toList(),
       matchedSkills: matched.take(10).toList(),
       jobsAnalyzed: jobs.length,
     );
+  }
+
+  static List<String> _requiredSkills(
+    Map<String, dynamic> job,
+    List<Map<String, dynamic>> allSkills,
+  ) {
+    final raw = job['required_skills'] ?? job['skills'];
+    if (raw is List) {
+      return raw
+          .map((value) => '$value'.trim())
+          .where((value) => value.isNotEmpty)
+          .toList();
+    }
+    if (raw is String && raw.trim().isNotEmpty) {
+      return raw
+          .split(RegExp(r'[,;\n|]'))
+          .map((value) => value.trim())
+          .where((value) => value.isNotEmpty)
+          .toList();
+    }
+    final text = _normalize(
+      [
+        job['title'] as String? ?? '',
+        job['description'] as String? ?? '',
+        job['qualifications'] as String? ?? '',
+        job['requirements'] as String? ?? '',
+      ].join(' '),
+    );
+    return allSkills
+        .map((skill) => skill['name'] as String? ?? '')
+        .where(
+          (name) => name.trim().isNotEmpty && text.contains(_normalize(name)),
+        )
+        .toList();
+  }
+
+  static String _normalize(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll('javascript', 'java script')
+        .replaceAll(RegExp(r'[^a-z0-9+#]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
   }
 }

@@ -7,14 +7,15 @@ import '../../../core/models/match_profile_context.dart';
 import '../../../core/services/ai_service.dart';
 import '../../../core/services/match_score_service.dart';
 import '../../../core/services/natural_language_search_service.dart';
-import '../../../core/services/notification_service.dart';
 import '../../../core/services/offline_cache_service.dart';
 import '../../../core/supabase/supabase_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/company_logo.dart';
+import '../../../core/widgets/app_feedback.dart';
 import '../../applications/screens/applications_screen.dart';
 import '../../auth/screens/login_screen.dart';
 import '../../messages/screens/messages_screen.dart';
+import '../../messages/widgets/unread_message_icon.dart';
 import '../../profile/screens/notifications_screen.dart';
 import '../../profile/screens/profile_screen.dart';
 import '../widgets/job_filters_sheet.dart';
@@ -61,8 +62,8 @@ class _HomeScreenState extends State<HomeScreen> {
             label: 'Applications',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.chat_bubble_outline),
-            activeIcon: Icon(Icons.chat_bubble),
+            icon: UnreadMessageIcon(icon: Icons.chat_bubble_outline),
+            activeIcon: UnreadMessageIcon(icon: Icons.chat_bubble),
             label: 'Messages',
           ),
           BottomNavigationBarItem(
@@ -101,6 +102,7 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
   int _pendingSyncCount = 0;
   Timer? _searchDebounce;
   bool _aiRankingActive = false;
+  String? _lastAiRankingKey;
 
   final List<Map<String, String>> _filters = [
     {'label': 'All', 'value': 'all'},
@@ -126,7 +128,9 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
       if (synced > 0) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Synced $synced offline change${synced == 1 ? '' : 's'}'),
+            content: Text(
+              'Synced $synced offline change${synced == 1 ? '' : 's'}',
+            ),
             backgroundColor: AppColors.success,
             duration: const Duration(seconds: 2),
           ),
@@ -149,16 +153,31 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
       _savedJobIds = {};
       _userSkillNames = [];
       _userYearsExperience = null;
+      _matchContext = const MatchProfileContext();
       return;
     }
 
     final profile = await SupabaseService.getProfile(user.id);
+    final role = SupabaseService.normalizeAccountType(
+      profile?['account_type'] ?? user.userMetadata?['account_type'],
+    );
+    if (role != 'job_seeker') {
+      _savedJobIds = {};
+      _userSkillNames = [];
+      _userYearsExperience = null;
+      _matchContext = const MatchProfileContext();
+      return;
+    }
+
+    final seekerProfile = await SupabaseService.getJobSeekerProfileContext(
+      user.id,
+    );
     final skills = await SupabaseService.getUserSkillNames(user.id);
     final savedIds = await SupabaseService.getSavedJobIds(user.id);
 
     _savedJobIds = savedIds;
     _userSkillNames = skills;
-    _matchContext = MatchProfileContext.fromProfile(profile, skills);
+    _matchContext = MatchProfileContext.fromProfile(seekerProfile, skills);
     _userYearsExperience = _matchContext.yearsExperience;
   }
 
@@ -194,7 +213,23 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
 
     try {
       if (online) {
-        await _loadUserContext();
+        final currentUser = Supabase.instance.client.auth.currentUser;
+        final currentRole = currentUser == null
+            ? 'unknown'
+            : SupabaseService.normalizeAccountType(
+                currentUser.userMetadata?['account_type'] ??
+                    (await SupabaseService.getProfile(
+                      currentUser.id,
+                    ))?['account_type'],
+              );
+        if (currentRole == 'job_seeker') {
+          await _loadUserContext();
+        } else {
+          _savedJobIds = {};
+          _userSkillNames = [];
+          _userYearsExperience = null;
+          _matchContext = const MatchProfileContext();
+        }
         final jobs = await SupabaseService.getJobs(
           workModel: _effectiveWorkModel,
           employmentType: _effectiveEmploymentType,
@@ -214,7 +249,7 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
         );
 
         var displayJobs = List<Map<String, dynamic>>.from(jobs);
-        if (_forYouMode) {
+        if (_forYouMode && currentRole == 'job_seeker') {
           displayJobs.sort((a, b) {
             final scoreA = MatchScoreService.calculate(
               job: a,
@@ -231,7 +266,15 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
             return scoreB.compareTo(scoreA);
           });
 
-          if (AiService.isConfigured && displayJobs.length > 1) {
+          final aiRankingKey = [
+            ...displayJobs.map((job) => job['id']?.toString() ?? ''),
+            ..._userSkillNames,
+            _matchContext.jobTitle ?? '',
+          ].join('|');
+          if (AiService.isConfigured &&
+              displayJobs.length > 1 &&
+              aiRankingKey != _lastAiRankingKey) {
+            _lastAiRankingKey = aiRankingKey;
             final profile = await SupabaseService.getProfile(
               Supabase.instance.client.auth.currentUser!.id,
             );
@@ -259,17 +302,11 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
         await OfflineCacheService.cacheJobs(displayJobs);
 
         final user = Supabase.instance.client.auth.currentUser;
-        if (user != null) {
+        if (user != null && currentRole == 'job_seeker') {
           final profile = await SupabaseService.getProfile(user.id);
           if (profile != null) {
             await OfflineCacheService.cacheProfile(user.id, profile);
           }
-          await NotificationService.checkHighMatchJobs(
-            jobs: displayJobs,
-            userSkillNames: _userSkillNames,
-            userYearsExperience: _userYearsExperience,
-            profile: _matchContext,
-          );
         }
 
         setState(() {
@@ -310,8 +347,13 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
           _selectedFilter = result.workModel;
         } else if (result.employmentType != 'all') {
           _selectedFilter = result.employmentType;
-        } else if (!['remote', 'hybrid', 'on-site', 'full-time', 'contract']
-            .contains(_selectedFilter)) {
+        } else if (![
+          'remote',
+          'hybrid',
+          'on-site',
+          'full-time',
+          'contract',
+        ].contains(_selectedFilter)) {
           _selectedFilter = 'all';
         }
       });
@@ -356,10 +398,12 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
   }
 
   String _formatSalary(Map<String, dynamic> job) {
-    final min = (job['salary_min'] as num?) ?? 0;
-    final max = (job['salary_max'] as num?) ?? 0;
-    if (min <= 0 && max <= 0) return 'Salary not listed';
-    return '\$${(min / 1000).toStringAsFixed(0)}k - \$${(max / 1000).toStringAsFixed(0)}k';
+    return SupabaseService.formatSalaryDisplay(
+      min: job['salary_min'] as num?,
+      max: job['salary_max'] as num?,
+      currency: job['salary_currency'] as String?,
+      negotiable: (job['salary_negotiable'] as bool?) ?? false,
+    );
   }
 
   @override
@@ -381,9 +425,7 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
             icon: const Icon(Icons.notifications_outlined),
             onPressed: () {
               Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const NotificationsScreen(),
-                ),
+                MaterialPageRoute(builder: (_) => const NotificationsScreen()),
               );
             },
           ),
@@ -481,10 +523,7 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
                           label: Text('For You'),
                           icon: Icon(Icons.auto_awesome, size: 18),
                         ),
-                        ButtonSegment(
-                          value: false,
-                          label: Text('All jobs'),
-                        ),
+                        ButtonSegment(value: false, label: Text('All jobs')),
                       ],
                       selected: {_forYouMode},
                       onSelectionChanged: (s) {
@@ -509,15 +548,18 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
                   onChanged: _onSearchChanged,
                   decoration: InputDecoration(
                     hintText:
-                        'Try: Senior roles in London remote over \$60k...',
-                    hintStyle:
-                        TextStyle(color: AppColors.textSec(context)),
-                    prefixIcon: Icon(Icons.search,
-                        color: AppColors.textSec(context)),
+                        'Try: Senior roles in Accra remote over GH₵60k...',
+                    hintStyle: TextStyle(color: AppColors.textSec(context)),
+                    prefixIcon: Icon(
+                      Icons.search,
+                      color: AppColors.textSec(context),
+                    ),
                     suffixIcon: _searchQuery.isNotEmpty
                         ? IconButton(
-                            icon: Icon(Icons.clear,
-                                color: AppColors.textSec(context)),
+                            icon: Icon(
+                              Icons.clear,
+                              color: AppColors.textSec(context),
+                            ),
                             onPressed: () {
                               _searchController.clear();
                               _onSearchChanged('');
@@ -525,8 +567,7 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
                           )
                         : null,
                     border: InputBorder.none,
-                    contentPadding:
-                        const EdgeInsets.symmetric(vertical: 14),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                 ),
               ),
@@ -534,8 +575,11 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    const Icon(Icons.auto_awesome,
-                        size: 14, color: AppColors.primary),
+                    const Icon(
+                      Icons.auto_awesome,
+                      size: 14,
+                      color: AppColors.primary,
+                    ),
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
@@ -567,12 +611,18 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
                               workModel: 'all',
                               employmentType: 'all',
                             );
-                          } else if (['remote', 'hybrid', 'on-site']
-                              .contains(value)) {
-                            _advancedFilters =
-                                _advancedFilters.copyWith(workModel: value);
-                          } else if (['full-time', 'contract']
-                              .contains(value)) {
+                          } else if ([
+                            'remote',
+                            'hybrid',
+                            'on-site',
+                          ].contains(value)) {
+                            _advancedFilters = _advancedFilters.copyWith(
+                              workModel: value,
+                            );
+                          } else if ([
+                            'full-time',
+                            'contract',
+                          ].contains(value)) {
                             _advancedFilters = _advancedFilters.copyWith(
                               employmentType: value,
                             );
@@ -583,7 +633,9 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
                       child: Container(
                         margin: const EdgeInsets.only(right: 8),
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 8),
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
                         decoration: BoxDecoration(
                           color: isSelected
                               ? AppColors.primary
@@ -613,10 +665,21 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
               const SizedBox(height: 20),
 
               Text(
-                _forYouMode
+                Supabase.instance.client.auth.currentUser != null &&
+                        SupabaseService.normalizeAccountType(
+                              Supabase
+                                      .instance
+                                      .client
+                                      .auth
+                                      .currentUser
+                                      ?.userMetadata?['account_type'] ??
+                                  'unknown',
+                            ) ==
+                            'job_seeker' &&
+                        _forYouMode
                     ? (_aiRankingActive
-                        ? 'AI-ranked for you'
-                        : 'Recommended for you')
+                          ? 'AI-ranked for you'
+                          : 'Recommended for you')
                     : 'All jobs',
                 style: TextStyle(
                   fontSize: 18,
@@ -637,68 +700,55 @@ class _JobsFeedScreenState extends State<JobsFeedScreen> {
                       ),
                     )
                   : _jobs.isEmpty
-                      ? Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(40),
-                            child: Column(
-                              children: [
-                                Icon(Icons.work_off_outlined,
-                                    size: 64,
-                                    color: AppColors.textSec(context)),
-                                const SizedBox(height: 16),
-                                Text(
-                                  'No jobs found',
-                                  style: TextStyle(
-                                      color: AppColors.textSec(context)),
-                                ),
-                              ],
-                            ),
-                          ),
-                        )
-                      : Column(
-                          children: _jobs.map((job) {
-                            final company =
-                                job['companies'] as Map<String, dynamic>?;
-                            final jobId = job['id'] as String? ?? '';
-                            final matchScore = MatchScoreService.calculate(
-                              job: job,
-                              userSkillNames: _userSkillNames,
-                              userYearsExperience: _userYearsExperience,
-                              profile: _matchContext,
-                            );
-                            return GestureDetector(
-                              onTap: () async {
-                                await Navigator.of(context).push(
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                        JobDetailScreen(job: job),
-                                  ),
-                                );
-                                _loadJobs();
-                              },
-                              child: _JobCard(
-                                title: job['title'] ?? '',
-                                company: company?['name'] ?? '',
-                                location: job['location'] ?? '',
-                                salary: _formatSalary(job),
-                                workModel: job['work_model'] ?? '',
-                                matchScore: matchScore,
-                                logoUrl: company?['logo_url'] as String?,
-                                jobId: jobId,
-                                initialIsSaved: _savedJobIds.contains(jobId),
-                                onSaveChanged: (saved) {
-                                  setState(() {
-                                    if (saved) {
-                                      _savedJobIds.add(jobId);
-                                    } else {
-                                      _savedJobIds.remove(jobId);
-                                    }
-                                  });
-                                },
+                  ? const AppEmptyState(
+                      icon: Icons.work_off_outlined,
+                      title: 'No jobs found',
+                      message:
+                          'Try a different search or filter to discover more opportunities.',
+                    )
+                  : Column(
+                      children: _jobs.map((job) {
+                        final company =
+                            job['companies'] as Map<String, dynamic>?;
+                        final jobId = job['id'] as String? ?? '';
+                        final matchScore = MatchScoreService.calculate(
+                          job: job,
+                          userSkillNames: _userSkillNames,
+                          userYearsExperience: _userYearsExperience,
+                          profile: _matchContext,
+                        );
+                        return GestureDetector(
+                          onTap: () async {
+                            await Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => JobDetailScreen(job: job),
                               ),
                             );
-                          }).toList(),
-                        ),
+                            _loadJobs();
+                          },
+                          child: _JobCard(
+                            title: job['title'] ?? '',
+                            company: company?['name'] ?? '',
+                            location: job['location'] ?? '',
+                            salary: _formatSalary(job),
+                            workModel: job['work_model'] ?? '',
+                            matchScore: matchScore,
+                            logoUrl: company?['logo_url'] as String?,
+                            jobId: jobId,
+                            initialIsSaved: _savedJobIds.contains(jobId),
+                            onSaveChanged: (saved) {
+                              setState(() {
+                                if (saved) {
+                                  _savedJobIds.add(jobId);
+                                } else {
+                                  _savedJobIds.remove(jobId);
+                                }
+                              });
+                            },
+                          ),
+                        );
+                      }).toList(),
+                    ),
             ],
           ),
         ),
@@ -775,8 +825,11 @@ class _JobCardState extends State<_JobCard> {
                     color: AppColors.primary.withValues(alpha: 0.1),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.lock_outline,
-                      color: AppColors.primary, size: 28),
+                  child: const Icon(
+                    Icons.lock_outline,
+                    color: AppColors.primary,
+                    size: 28,
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Text(
@@ -801,8 +854,7 @@ class _JobCardState extends State<_JobCard> {
                   onPressed: () {
                     Navigator.pop(context);
                     Navigator.of(context).push(
-                      MaterialPageRoute(
-                          builder: (_) => const LoginScreen()),
+                      MaterialPageRoute(builder: (_) => const LoginScreen()),
                     );
                   },
                   child: const Text('Sign in'),
@@ -832,8 +884,7 @@ class _JobCardState extends State<_JobCard> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-                _isSaved ? 'Job saved!' : 'Job removed from saved'),
+            content: Text(_isSaved ? 'Job saved!' : 'Job removed from saved'),
             backgroundColor: _isSaved
                 ? AppColors.success
                 : AppColors.textSecondary,
@@ -899,7 +950,9 @@ class _JobCardState extends State<_JobCard> {
               ),
               Container(
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 4),
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.primary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(20),
@@ -918,8 +971,11 @@ class _JobCardState extends State<_JobCard> {
           const SizedBox(height: 12),
           Row(
             children: [
-              Icon(Icons.location_on_outlined,
-                  size: 14, color: AppColors.textSec(context)),
+              Icon(
+                Icons.location_on_outlined,
+                size: 14,
+                color: AppColors.textSec(context),
+              ),
               const SizedBox(width: 4),
               Text(
                 widget.location,
@@ -929,8 +985,11 @@ class _JobCardState extends State<_JobCard> {
                 ),
               ),
               const SizedBox(width: 16),
-              Icon(Icons.attach_money,
-                  size: 14, color: AppColors.textSec(context)),
+              Icon(
+                Icons.attach_money,
+                size: 14,
+                color: AppColors.textSec(context),
+              ),
               const SizedBox(width: 4),
               Text(
                 widget.salary,
@@ -947,7 +1006,9 @@ class _JobCardState extends State<_JobCard> {
             children: [
               Container(
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 4),
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: _workModelColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(20),

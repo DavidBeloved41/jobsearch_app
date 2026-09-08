@@ -18,6 +18,7 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> {
   List<Map<String, dynamic>> _applications = [];
   bool _isLoading = true;
   bool _isOffline = false;
+  String? _error;
 
   static const _columns = [
     _KanbanColumn(id: 'applied', label: 'Applied', color: AppColors.primary),
@@ -57,16 +58,32 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> {
         setState(() {
           _applications = applications;
           _isOffline = false;
+          _error = null;
           _isLoading = false;
         });
       } else {
         throw Exception('offline');
       }
     } catch (e) {
+      final online = await Connectivity().checkConnectivity();
+      final hasNetwork = !online.contains(ConnectivityResult.none);
+      if (hasNetwork) {
+        debugPrint('Error loading applications from Supabase: $e');
+        if (mounted) {
+          setState(() {
+            _applications = [];
+            _isOffline = false;
+            _error = 'Could not refresh applications. Please try again.';
+            _isLoading = false;
+          });
+        }
+        return;
+      }
       final cached = await OfflineCacheService.getCachedApplications(userId);
       setState(() {
         _applications = cached ?? [];
         _isOffline = cached != null;
+        _error = null;
         _isLoading = false;
       });
       if (cached == null) {
@@ -97,9 +114,9 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> {
       Navigator.pop(context);
 
       if (job != null) {
-        await Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => JobDetailScreen(job: job)),
-        );
+        await Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => JobDetailScreen(job: job)));
         _loadApplications();
       }
     } catch (e) {
@@ -115,44 +132,7 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> {
     }
   }
 
-  Future<void> _moveApplication(
-    Map<String, dynamic> item,
-    String newStatus,
-  ) async {
-    final id = item['id'] as String?;
-    if (id == null) return;
-
-    try {
-      await SupabaseService.updateApplicationStatus(id, newStatus);
-      setState(() {
-        item['status'] = newStatus;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Moved to ${_labelFor(newStatus)}'),
-            duration: const Duration(seconds: 1),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Failed to update status'),
-            backgroundColor: AppColors.error,
-          ),
-        );
-      }
-    }
-  }
-
-  String _labelFor(String status) {
-    return _columns.firstWhere((c) => c.id == status).label;
-  }
-
   void _showMoveMenu(Map<String, dynamic> item) {
-    final current = item['status'] as String? ?? 'applied';
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.surf(context),
@@ -174,16 +154,10 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> {
                 ),
               ),
             ),
-            ..._columns.where((c) => c.id != current).map(
-                  (col) => ListTile(
-                    leading: Icon(Icons.circle, size: 12, color: col.color),
-                    title: Text(col.label),
-                    onTap: () {
-                      Navigator.pop(context);
-                      _moveApplication(item, col.id);
-                    },
-                  ),
-                ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 24),
+              child: Text('Application status is updated by the employer.'),
+            ),
           ],
         ),
       ),
@@ -213,46 +187,61 @@ class _ApplicationsScreenState extends State<ApplicationsScreen> {
               ),
             )
           : _isLoading
-              ? const Center(
-                  child: CircularProgressIndicator(color: AppColors.primary),
-                )
-              : RefreshIndicator(
-                  onRefresh: _loadApplications,
-                  child: Column(
-                    children: [
-                      if (_isOffline)
-                        Container(
-                          width: double.infinity,
-                          margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: AppColors.warning.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Text(
-                            'Offline — showing cached applications',
-                            style: TextStyle(fontSize: 13),
-                          ),
-                        ),
-                      SizedBox(
-                        height: MediaQuery.of(context).size.height * 0.72,
-                        child: ListView(
-                          scrollDirection: Axis.horizontal,
-                          padding: const EdgeInsets.all(12),
-                          children: _columns.map((col) {
-                            final items = _forStatus(col.id);
-                            return _KanbanBoardColumn(
-                              column: col,
-                              items: items,
-                              onTapCard: _openJobDetail,
-                              onMoveCard: _showMoveMenu,
-                            );
-                          }).toList(),
-                        ),
-                      ),
-                    ],
+          ? const Center(
+              child: CircularProgressIndicator(color: AppColors.primary),
+            )
+          : _error != null
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(_error!),
+                  const SizedBox(height: 12),
+                  ElevatedButton.icon(
+                    onPressed: _loadApplications,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Retry'),
                   ),
-                ),
+                ],
+              ),
+            )
+          : RefreshIndicator(
+              onRefresh: _loadApplications,
+              child: Column(
+                children: [
+                  if (_isOffline)
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppColors.warning.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        'Offline — showing cached applications',
+                        style: TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  SizedBox(
+                    height: MediaQuery.of(context).size.height * 0.72,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.all(12),
+                      children: _columns.map((col) {
+                        final items = _forStatus(col.id);
+                        return _KanbanBoardColumn(
+                          column: col,
+                          items: items,
+                          onTapCard: _openJobDetail,
+                          onMoveCard: _showMoveMenu,
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
     );
   }
 }
@@ -383,8 +372,7 @@ class _KanbanBoardColumn extends StatelessWidget {
                               Row(
                                 children: [
                                   CompanyLogo(
-                                    logoUrl:
-                                        company?['logo_url'] as String?,
+                                    logoUrl: company?['logo_url'] as String?,
                                     size: 36,
                                   ),
                                   const SizedBox(width: 8),

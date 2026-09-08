@@ -33,11 +33,7 @@ class CompanyLogo extends StatelessWidget {
                 size: size * 0.55,
               ),
             )
-          : Icon(
-              fallbackIcon,
-              color: AppColors.primary,
-              size: size * 0.55,
-            ),
+          : Icon(fallbackIcon, color: AppColors.primary, size: size * 0.55),
     );
   }
 }

@@ -144,7 +144,10 @@ class OfflineCacheService {
     return List<Map<String, dynamic>>.from(jsonDecode(raw) as List);
   }
 
-  static Future<void> removePendingApplication(String userId, String jobId) async {
+  static Future<void> removePendingApplication(
+    String userId,
+    String jobId,
+  ) async {
     final box = await _box();
     final raw = box.get(_pendingApplicationsKey) as String?;
     if (raw == null) return;
@@ -169,9 +172,7 @@ class OfflineCacheService {
         ? Map<String, dynamic>.from(jsonDecode(raw) as Map)
         : <String, dynamic>{};
 
-    final existing = Map<String, dynamic>.from(
-      map[userId] as Map? ?? {},
-    );
+    final existing = Map<String, dynamic>.from(map[userId] as Map? ?? {});
     existing.addAll(data);
     map[userId] = existing;
     await box.put(_pendingProfileUpdatesKey, jsonEncode(map));
@@ -204,10 +205,7 @@ class OfflineCacheService {
   ) async {
     try {
       final box = await _box();
-      await box.put(
-        '$_applicationsPrefix$userId',
-        jsonEncode(applications),
-      );
+      await box.put('$_applicationsPrefix$userId', jsonEncode(applications));
     } catch (e) {
       debugPrint('OfflineCacheService: cacheApplications $e');
     }
@@ -232,10 +230,7 @@ class OfflineCacheService {
   ) async {
     try {
       final box = await _box();
-      await box.put(
-        '$_conversationsPrefix$userId',
-        jsonEncode(conversations),
-      );
+      await box.put('$_conversationsPrefix$userId', jsonEncode(conversations));
     } catch (e) {
       debugPrint('OfflineCacheService: cacheConversations $e');
     }
@@ -334,8 +329,9 @@ class OfflineSyncService {
 
     final user = Supabase.instance.client.auth.currentUser;
     if (user != null) {
-      final pendingProfile =
-          await OfflineCacheService.getPendingProfileUpdate(user.id);
+      final pendingProfile = await OfflineCacheService.getPendingProfileUpdate(
+        user.id,
+      );
       if (pendingProfile != null && pendingProfile.isNotEmpty) {
         try {
           await SupabaseService.updateProfile(user.id, pendingProfile);
@@ -360,16 +356,15 @@ class OfflineSyncService {
       }
     }
 
-    final pendingMessages =
-        await OfflineCacheService.getPendingMessages();
+    final pendingMessages = await OfflineCacheService.getPendingMessages();
     final remaining = <Map<String, dynamic>>[];
     for (final msg in pendingMessages) {
       try {
-        await Supabase.instance.client.from('messages').insert({
-          'sender_id': msg['sender_id'],
-          'receiver_id': msg['receiver_id'],
-          'content': msg['content'],
-        });
+        await SupabaseService.sendMessage(
+          senderId: msg['sender_id'] as String,
+          receiverId: msg['receiver_id'] as String,
+          content: msg['content'] as String,
+        );
         synced++;
       } catch (e) {
         debugPrint('OfflineSyncService: message sync failed $e');

@@ -33,7 +33,9 @@ class _ProfileVisibilityScreenState extends State<ProfileVisibilityScreen> {
     }
 
     final profile = await SupabaseService.getProfile(userId);
-    final interests = await SupabaseService.getInboundRecruiterInterests(userId);
+    final interests = await SupabaseService.getInboundRecruiterInterests(
+      userId,
+    );
 
     if (mounted) {
       setState(() {
@@ -181,7 +183,8 @@ class _ProfileVisibilityScreenState extends State<ProfileVisibilityScreen> {
                             recruiter?['company_name'] as String? ?? '';
                         final headline =
                             recruiter?['headline'] as String? ?? 'Recruiter';
-                        final message = interest['message'] as String? ??
+                        final message =
+                            interest['message'] as String? ??
                             interest['body'] as String? ??
                             'Expressed interest in your profile';
 
@@ -204,8 +207,9 @@ class _ProfileVisibilityScreenState extends State<ProfileVisibilityScreen> {
                                       vertical: 4,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: AppColors.primary
-                                          .withValues(alpha: 0.1),
+                                      color: AppColors.primary.withValues(
+                                        alpha: 0.1,
+                                      ),
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: const Text(
@@ -268,8 +272,10 @@ class _ProfileVisibilityScreenState extends State<ProfileVisibilityScreen> {
                                   child: TextButton.icon(
                                     onPressed: () =>
                                         _openRecruiterChat(interest),
-                                    icon: const Icon(Icons.chat_outlined,
-                                        size: 18),
+                                    icon: const Icon(
+                                      Icons.chat_outlined,
+                                      size: 18,
+                                    ),
                                     label: const Text('Reply'),
                                   ),
                                 ),

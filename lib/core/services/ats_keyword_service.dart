@@ -12,10 +12,39 @@ class AtsAnalysisResult {
 
 class AtsKeywordService {
   static const _stopWords = {
-    'the', 'and', 'for', 'with', 'you', 'your', 'our', 'will', 'this',
-    'that', 'from', 'have', 'has', 'are', 'was', 'been', 'being', 'into',
-    'about', 'over', 'such', 'their', 'they', 'them', 'able', 'work',
-    'team', 'role', 'job', 'experience', 'years', 'required', 'preferred',
+    'the',
+    'and',
+    'for',
+    'with',
+    'you',
+    'your',
+    'our',
+    'will',
+    'this',
+    'that',
+    'from',
+    'have',
+    'has',
+    'are',
+    'was',
+    'been',
+    'being',
+    'into',
+    'about',
+    'over',
+    'such',
+    'their',
+    'they',
+    'them',
+    'able',
+    'work',
+    'team',
+    'role',
+    'job',
+    'experience',
+    'years',
+    'required',
+    'preferred',
   };
 
   static AtsAnalysisResult analyze({
@@ -54,7 +83,10 @@ class AtsKeywordService {
       }
     }
 
-    final percent = ((matched.length / keywords.length) * 100).round().clamp(0, 100);
+    final percent = ((matched.length / keywords.length) * 100).round().clamp(
+      0,
+      100,
+    );
 
     return AtsAnalysisResult(
       matchedKeywords: matched,

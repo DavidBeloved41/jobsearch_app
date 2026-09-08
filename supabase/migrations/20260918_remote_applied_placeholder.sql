@@ -1,0 +1,3 @@
+-- Remote migration 20260918 is already applied in the linked project.
+-- The original local file was removed from this workspace, so this placeholder
+-- preserves Supabase CLI migration history and intentionally performs no change.

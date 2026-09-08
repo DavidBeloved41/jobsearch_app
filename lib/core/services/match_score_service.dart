@@ -28,8 +28,10 @@ class MatchScoreService {
     required List<String> userSkillNames,
     int? userYearsExperience,
     MatchProfileContext? profile,
+    String? resumeText,
   }) {
-    final ctx = profile ??
+    final ctx =
+        profile ??
         MatchProfileContext(
           skillNames: userSkillNames,
           yearsExperience: userYearsExperience,
@@ -37,6 +39,10 @@ class MatchScoreService {
 
     final skills = ctx.skillNames.isNotEmpty ? ctx.skillNames : userSkillNames;
     final years = ctx.yearsExperience ?? userYearsExperience;
+    final normalizedResume = _normalizeText(resumeText ?? '');
+    final candidateText = _normalizeText(
+      [...skills, normalizedResume].join(' '),
+    );
 
     var skillsScore = 0.0;
     var experienceScore = 0.0;
@@ -49,25 +55,41 @@ class MatchScoreService {
     final matchedSkills = <String>[];
     final missingSkills = <String>[];
 
-    final jobText = [
-      job['title'] as String? ?? '',
-      job['description'] as String? ?? '',
-    ].join(' ').toLowerCase();
+    final jobText = _normalizeText(
+      [
+        job['title'] as String? ?? '',
+        job['description'] as String? ?? '',
+        job['qualifications'] as String? ?? '',
+        job['requirements'] as String? ?? '',
+        job['responsibilities'] as String? ?? '',
+        job['required_skills'] is List
+            ? (job['required_skills'] as List).join(' ')
+            : job['required_skills'] as String? ?? '',
+      ].join(' '),
+    );
 
-    if (skills.isNotEmpty && jobText.isNotEmpty) {
-      for (final skill in skills) {
-        final name = skill.trim().toLowerCase();
+    final requiredSkills = _requiredSkills(job);
+    if (requiredSkills.isNotEmpty) {
+      for (final requiredSkill in requiredSkills) {
+        final name = _normalizeText(requiredSkill);
         if (name.length < 2) continue;
-        if (jobText.contains(name)) {
-          matchedSkills.add(skill);
+        if (candidateText.contains(name)) {
+          matchedSkills.add(requiredSkill);
         } else {
-          missingSkills.add(skill);
+          missingSkills.add(requiredSkill);
         }
       }
-      final skillRatio = matchedSkills.length / skills.length;
+      final skillRatio = matchedSkills.length / requiredSkills.length;
       skillsScore = skillRatio * 35;
-    } else if (skills.isEmpty) {
-      skillsScore = 8;
+    } else if (candidateText.isNotEmpty && jobText.isNotEmpty) {
+      final jobWords = jobText
+          .split(' ')
+          .where((word) => word.length >= 4)
+          .toSet();
+      if (jobWords.isNotEmpty) {
+        final relevantWords = jobWords.where(candidateText.contains).length;
+        skillsScore = ((relevantWords / jobWords.length) * 35).clamp(0, 35);
+      }
     }
 
     final jobLevel = (job['experience_level'] as String? ?? '').toLowerCase();
@@ -128,7 +150,9 @@ class MatchScoreService {
     final userTitle = (ctx.jobTitle ?? '').trim().toLowerCase();
     final jobTitle = (job['title'] as String? ?? '').trim().toLowerCase();
     if (userTitle.isNotEmpty && jobTitle.isNotEmpty) {
-      final userWords = userTitle.split(RegExp(r'\s+')).where((w) => w.length > 2);
+      final userWords = userTitle
+          .split(RegExp(r'\s+'))
+          .where((w) => w.length > 2);
       final matches = userWords.where(jobTitle.contains).length;
       if (matches >= 2) {
         titleScore = 10;
@@ -141,8 +165,8 @@ class MatchScoreService {
         skills.isNotEmpty && years != null && userLocation.isNotEmpty;
     if (profileComplete) profileBonus = 5;
 
-    final employmentType =
-        (job['employment_type'] as String? ?? '').toLowerCase();
+    final employmentType = (job['employment_type'] as String? ?? '')
+        .toLowerCase();
     final preferredEmployment = ctx.preferredEmploymentType.toLowerCase();
     if (preferredEmployment != 'all' &&
         employmentType.isNotEmpty &&
@@ -150,15 +174,16 @@ class MatchScoreService {
       profileBonus += 3;
     }
 
-    final total = (skillsScore +
-            experienceScore +
-            locationScore +
-            salaryScore +
-            workModelScore +
-            titleScore +
-            profileBonus)
-        .clamp(25, 99)
-        .round();
+    final total =
+        (skillsScore +
+                experienceScore +
+                locationScore +
+                salaryScore +
+                workModelScore +
+                titleScore +
+                profileBonus)
+            .clamp(0, 99)
+            .round();
 
     return MatchScoreBreakdown(
       totalScore: total,
@@ -180,5 +205,32 @@ class MatchScoreService {
     if (years < 10) return 'senior';
     if (years < 15) return 'lead';
     return 'executive';
+  }
+
+  static List<String> _requiredSkills(Map<String, dynamic> job) {
+    final raw = job['required_skills'] ?? job['skills'];
+    if (raw is List) {
+      return raw
+          .map((value) => '$value'.trim())
+          .where((value) => value.isNotEmpty)
+          .toList();
+    }
+    if (raw is String) {
+      return raw
+          .split(RegExp(r'[,;\n|]'))
+          .map((value) => value.trim())
+          .where((value) => value.isNotEmpty)
+          .toList();
+    }
+    return const [];
+  }
+
+  static String _normalizeText(String value) {
+    return value
+        .toLowerCase()
+        .replaceAll('javascript', 'java script')
+        .replaceAll(RegExp(r'[^a-z0-9+#]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
   }
 }

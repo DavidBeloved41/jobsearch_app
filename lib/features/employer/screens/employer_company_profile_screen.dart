@@ -82,7 +82,14 @@ class _EmployerCompanyProfileScreenState
         return;
       }
 
+      debugPrint('[EMPLOYER PROFILE] Loading for userId: ${user.id}');
+
+      // Load employer profile - NULL is a valid first-time state
       final company = await SupabaseService.getEmployerProfile(user.id);
+      debugPrint(
+        '[EMPLOYER PROFILE] Query result: ${company != null ? 'Found existing profile' : 'No profile exists (first-time)'}',
+      );
+
       if (!mounted) return;
       setState(() {
         _nameController.text = company?['company_name'] as String? ?? '';
@@ -101,10 +108,13 @@ class _EmployerCompanyProfileScreenState
         _loading = false;
       });
     } catch (e) {
-      debugPrint('Employer company profile load error: $e');
+      debugPrint('[EMPLOYER PROFILE ERROR] Actual error occurred: $e');
       if (mounted) {
         setState(() => _loading = false);
-        _showError('Unable to load company profile. Please try again.');
+        // Only show error for actual exceptions, not for missing profile
+        _showError(
+          'Error loading profile. Please check your connection and try again.',
+        );
       }
     }
   }
@@ -180,11 +190,22 @@ class _EmployerCompanyProfileScreenState
           backgroundColor: AppColors.success,
         ),
       );
-    } catch (e) {
-      debugPrint('Employer company profile save error: $e');
+    } on PostgrestException catch (error) {
+      debugPrint('Employer profile save error: $error');
+      debugPrint('Code: ${error.code}');
+      debugPrint('Details: ${error.details}');
+      debugPrint('Hint: ${error.hint}');
       if (mounted) {
         setState(() => _saving = false);
-        _showError('Unable to save company profile. Please try again.');
+        _showError(
+          'Company profile save failed (${error.code}): ${error.message}',
+        );
+      }
+    } catch (error) {
+      debugPrint('Employer profile save error: $error');
+      if (mounted) {
+        setState(() => _saving = false);
+        _showError('Company profile save failed: $error');
       }
     }
   }

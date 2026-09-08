@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../app/router.dart';
 import '../../../core/supabase/supabase_service.dart';
 import '../../../core/services/biometric_service.dart';
 import '../../../core/theme/app_colors.dart';
@@ -44,6 +46,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         return;
       }
       final profile = await SupabaseService.getProfile(userId);
+      final accountType = profile != null
+          ? SupabaseService.normalizeAccountType(profile['account_type'])
+          : SupabaseService.normalizeAccountType(
+              Supabase
+                  .instance
+                  .client
+                  .auth
+                  .currentUser
+                  ?.userMetadata?['account_type'],
+            );
 
       // Load biometric settings
       final biometricAvailable = await BiometricService.isAvailable();
@@ -52,9 +64,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
       if (profile != null) {
         setState(() {
-          _accountType = SupabaseService.normalizeAccountType(
-            profile['account_type'],
-          );
+          _accountType = accountType;
           _jobAlerts = profile['notify_job_alerts'] ?? true;
           _messageNotifications = profile['notify_messages'] ?? true;
           _applicationUpdates = profile['notify_application_updates'] ?? true;
@@ -192,6 +202,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  Future<void> _signOut() async {
+    final currentContext = context;
+    try {
+      await Supabase.instance.client.auth.signOut();
+      if (currentContext.mounted) currentContext.go(AppRoutes.login);
+    } catch (e) {
+      debugPrint('Settings logout error: $e');
+      if (currentContext.mounted) {
+        ScaffoldMessenger.of(currentContext).showSnackBar(
+          SnackBar(
+            content: Text('Logout failed: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
   void _showProfileVisibilityDialog() {
     // FIX: Use loaded value instead of always defaulting to 'everyone'
     String selected = _profileVisibility;
@@ -316,6 +344,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   void _showChangePasswordDialog() {
+    final passwordController = TextEditingController();
+    final confirmPasswordController = TextEditingController();
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.surf(context),
@@ -324,6 +354,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ),
       builder: (context) {
         bool isSending = false;
+        String? errorMessage;
         return StatefulBuilder(
           builder: (context, setModalState) {
             return Padding(
@@ -347,57 +378,98 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'We will send a password reset link to your email address.',
+                    'Choose a new password for your authenticated account.',
                     style: TextStyle(
                       fontSize: 14,
                       color: AppColors.textSec(context),
                     ),
                     textAlign: TextAlign.center,
                   ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: passwordController,
+                    obscureText: true,
+                    decoration: const InputDecoration(
+                      labelText: 'New password',
+                      prefixIcon: Icon(Icons.lock_outline),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: confirmPasswordController,
+                    obscureText: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Confirm new password',
+                      prefixIcon: Icon(Icons.lock_outline),
+                    ),
+                  ),
+                  if (errorMessage != null) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      errorMessage!,
+                      style: const TextStyle(color: AppColors.error),
+                    ),
+                  ],
                   const SizedBox(height: 24),
                   ElevatedButton(
                     onPressed: isSending
                         ? null
                         : () async {
-                            final email = Supabase
-                                .instance
-                                .client
-                                .auth
-                                .currentUser
-                                ?.email;
-                            if (email == null) return;
+                            final password = passwordController.text.trim();
+                            final confirmation = confirmPasswordController.text
+                                .trim();
+                            if (password.length < 6) {
+                              setModalState(
+                                () => errorMessage =
+                                    'Password must be at least 6 characters.',
+                              );
+                              return;
+                            }
+                            if (password != confirmation) {
+                              setModalState(
+                                () => errorMessage = 'Passwords do not match.',
+                              );
+                              return;
+                            }
                             setModalState(() => isSending = true);
                             try {
-                              // FIX: redirectTo stops the link opening localhost.
-                              // Also add 'smartjob://reset-password' in:
-                              // Supabase Dashboard -> Authentication ->
-                              // URL Configuration -> Redirect URLs
-                              await Supabase.instance.client.auth
-                                  .resetPasswordForEmail(
-                                    email,
-                                    redirectTo: 'smartjob://reset-password',
-                                  );
+                              final user =
+                                  Supabase.instance.client.auth.currentUser;
+                              if (user == null) {
+                                throw const AuthException(
+                                  'An authenticated session is required.',
+                                );
+                              }
+                              await Supabase.instance.client.auth.updateUser(
+                                UserAttributes(password: password),
+                              );
                               if (context.mounted) {
                                 Navigator.pop(context);
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
                                     content: Text(
-                                      'Password reset link sent to your email!',
+                                      'Password updated successfully.',
                                     ),
                                     backgroundColor: AppColors.success,
                                   ),
                                 );
                               }
-                            } catch (e) {
-                              setModalState(() => isSending = false);
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('Error: $e'),
-                                    backgroundColor: AppColors.error,
-                                  ),
-                                );
-                              }
+                            } on AuthException catch (error) {
+                              setModalState(() {
+                                isSending = false;
+                                errorMessage =
+                                    'Unable to update password. Please try again.';
+                              });
+                              debugPrint(
+                                'Change password failed: ${error.code}',
+                              );
+                            } catch (error) {
+                              setModalState(() {
+                                isSending = false;
+                                errorMessage =
+                                    'Unable to update password. Please try again.';
+                              });
+                              debugPrint('Change password failed: $error');
                             }
                           },
                     child: isSending
@@ -409,7 +481,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                               strokeWidth: 2,
                             ),
                           )
-                        : const Text('Send reset link'),
+                        : const Text('Update password'),
                   ),
                   const SizedBox(height: 8),
                   TextButton(
@@ -423,7 +495,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           },
         );
       },
-    );
+    ).whenComplete(() {
+      passwordController.dispose();
+      confirmPasswordController.dispose();
+    });
   }
 
   Future<void> _downloadData() async {
@@ -714,7 +789,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           subtitle: 'Update your password',
                           onTap: _showChangePasswordDialog,
                         ),
-                        if (_biometricAvailable) ...[
+                        if (_accountType != 'admin' && _biometricAvailable) ...[
                           _Divider(),
                           _SwitchTile(
                             icon: _biometricLabel == 'Face ID'
@@ -739,6 +814,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           label: 'Delete account',
                           subtitle: 'Permanently delete your account',
                           onTap: _showDeleteAccountDialog,
+                          color: AppColors.error,
+                        ),
+                        _Divider(),
+                        _TapTile(
+                          icon: Icons.logout,
+                          label: 'Logout',
+                          subtitle: 'Sign out of this account',
+                          onTap: _signOut,
                           color: AppColors.error,
                         ),
                       ],

@@ -27,7 +27,8 @@ class CareerAdviceRepository {
       summary:
           'Practical strategies for researching market rates and making your case.',
       readTime: '6 min read',
-      content: '''Research is your foundation. Before any conversation, use job boards, salary surveys, and your SmartJob match data to understand the range for your role, location, and experience level.
+      content:
+          '''Research is your foundation. Before any conversation, use job boards, salary surveys, and your SmartJob match data to understand the range for your role, location, and experience level.
 
 Timing matters. The best window is after a verbal offer but before you sign. Express enthusiasm first, then ask: "Is there flexibility in the compensation package?"
 
@@ -44,7 +45,8 @@ Practice your script aloud. Confidence comes from preparation. Write down your k
       summary:
           'Stand out to recruiters with a consistent, authentic professional presence.',
       readTime: '5 min read',
-      content: '''Your personal brand is the story people tell about you when you're not in the room. Start with clarity: what problems do you solve, for whom, and with what skills?
+      content:
+          '''Your personal brand is the story people tell about you when you're not in the room. Start with clarity: what problems do you solve, for whom, and with what skills?
 
 Optimize your headline and summary with keywords recruiters search for — but write for humans, not algorithms. Share one insight per week: a lesson learned, a project win, or an industry trend.
 
@@ -61,7 +63,8 @@ Keep your SmartJob profile complete: skills, resume, and "Open to work" when app
       summary:
           'What candidates should know about flexible work arrangements today.',
       readTime: '4 min read',
-      content: '''Remote work has stabilized into a hybrid default for many industries. Tech, marketing, and design roles lead in fully remote options; operations and healthcare remain more on-site.
+      content:
+          '''Remote work has stabilized into a hybrid default for many industries. Tech, marketing, and design roles lead in fully remote options; operations and healthcare remain more on-site.
 
 When evaluating roles, look beyond the label. "Hybrid" can mean 1 day in office or 4 — clarify expectations in early conversations.
 
@@ -78,7 +81,8 @@ Negotiate location flexibility as part of your package. Many employers will adju
       summary:
           'Format and keyword tips to get past applicant tracking systems.',
       readTime: '5 min read',
-      content: '''Applicant Tracking Systems scan resumes for keywords from the job description. Mirror the job posting's language for skills, tools, and titles — naturally, not stuffed.
+      content:
+          '''Applicant Tracking Systems scan resumes for keywords from the job description. Mirror the job posting's language for skills, tools, and titles — naturally, not stuffed.
 
 Use a clean, single-column layout. Avoid tables, text boxes, headers/footers, and graphics that parsers can't read. PDF is safe when exported from a standard editor.
 
@@ -95,7 +99,8 @@ Use SmartJob's ATS check on your resume draft against specific jobs to find miss
       summary:
           'Structure compelling answers using Situation, Task, Action, Result.',
       readTime: '4 min read',
-      content: '''Behavioral questions ("Tell me about a time when...") test how you've handled real situations. The STAR method keeps answers focused:
+      content:
+          '''Behavioral questions ("Tell me about a time when...") test how you've handled real situations. The STAR method keeps answers focused:
 
 Situation — Set the scene briefly (1-2 sentences).
 Task — What was your responsibility?
@@ -112,10 +117,10 @@ After each interview round, jot notes while fresh. You'll improve faster and can
       id: 'skill_growth',
       title: 'Closing Skill Gaps Without Going Back to School',
       category: 'Career Growth',
-      summary:
-          'Affordable ways to build in-demand skills recruiters want.',
+      summary: 'Affordable ways to build in-demand skills recruiters want.',
       readTime: '5 min read',
-      content: '''Start with SmartJob's Skill Gap Analysis — it shows which skills appear most in jobs matching your target roles.
+      content:
+          '''Start with SmartJob's Skill Gap Analysis — it shows which skills appear most in jobs matching your target roles.
 
 Micro-learning wins: 30 minutes daily on focused tutorials beats occasional marathon sessions. Build one small project per skill to prove capability.
 

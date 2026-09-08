@@ -20,6 +20,7 @@ import '../../employer/screens/employer_candidates_screen.dart';
 import '../../employer/screens/employer_company_profile_screen.dart';
 import '../../employer/screens/my_jobs_screen.dart';
 import '../../employer/screens/post_job_screen.dart';
+import '../../jobs/screens/home_screen.dart';
 import 'settings_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -518,7 +519,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           label: 'Browse jobs',
                           onTap: () => Navigator.of(context).push(
                             MaterialPageRoute(
-                              builder: (_) => const CareerAdviceScreen(),
+                              builder: (_) => const HomeScreen(),
                             ),
                           ),
                         ),

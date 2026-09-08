@@ -6,7 +6,9 @@ import '../../../core/supabase/supabase_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../screens/post_job_screen.dart';
 import '../screens/my_jobs_screen.dart';
+import '../screens/employer_applications_screen.dart';
 import '../../messages/screens/messages_screen.dart';
+import '../../messages/widgets/unread_message_icon.dart';
 
 class EmployerDashboardScreen extends StatefulWidget {
   const EmployerDashboardScreen({super.key});
@@ -21,6 +23,7 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
   String? _companyLogoUrl;
   int _jobsPosted = 0;
   int _totalApplicants = 0;
+  Map<String, int> _applicationCounts = const {};
   int _activeJobs = 0;
   bool _loading = true;
   String _selectedTimeFilter = 'This month';
@@ -43,9 +46,6 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
     try {
       final company = await SupabaseService.getEmployerProfile(userId);
       final jobs = await SupabaseService.getJobsByPoster(userId);
-      final applicantCount = await SupabaseService.getApplicantCountForPoster(
-        userId,
-      );
       final activeJobCount = await SupabaseService.getActiveJobCountForPoster(
         userId,
       );
@@ -53,15 +53,18 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
         userId,
         limit: 5,
       );
+      final applicationCounts =
+          await SupabaseService.getApplicationStatusCountsForEmployer(userId);
 
       if (mounted) {
         setState(() {
           _companyName = company?['company_name'] as String?;
           _companyLogoUrl = company?['logo_url'] as String?;
           _jobsPosted = jobs.length;
-          _totalApplicants = applicantCount;
+          _totalApplicants = applicationCounts['all'] ?? 0;
           _activeJobs = activeJobCount;
           _recentApplications = recentApps;
+          _applicationCounts = applicationCounts;
           _loading = false;
         });
       }
@@ -75,57 +78,61 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bg(context),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _loadDashboardData,
-              child: SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Header
-                    _buildHeader(context),
+      body: SafeArea(
+        child: _loading
+            ? const Center(
+                child: CircularProgressIndicator(color: AppColors.primary),
+              )
+            : RefreshIndicator(
+                onRefresh: _loadDashboardData,
+                child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.all(0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Header
+                      _buildHeader(context),
 
-                    Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Company Summary Card
+                            if (_jobsPosted == 0)
+                              _buildEmptyStateCard(context)
+                            else
+                              _buildCompanySummaryCard(context),
+
+                            const SizedBox(height: 24),
+
+                            // Statistics Section
+                            _buildStatisticsSection(context),
+
+                            const SizedBox(height: 24),
+
+                            // Quick Actions
+                            _buildQuickActionsSection(context),
+
+                            const SizedBox(height: 24),
+
+                            // Recent Activity
+                            if (_recentApplications.isNotEmpty)
+                              _buildRecentActivitySection(context),
+
+                            const SizedBox(height: 24),
+                          ],
+                        ),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Company Summary Card
-                          if (_jobsPosted == 0)
-                            _buildEmptyStateCard(context)
-                          else
-                            _buildCompanySummaryCard(context),
-
-                          const SizedBox(height: 24),
-
-                          // Statistics Section
-                          _buildStatisticsSection(context),
-
-                          const SizedBox(height: 24),
-
-                          // Quick Actions
-                          _buildQuickActionsSection(context),
-
-                          const SizedBox(height: 24),
-
-                          // Recent Activity
-                          if (_recentApplications.isNotEmpty)
-                            _buildRecentActivitySection(context),
-
-                          const SizedBox(height: 24),
-                        ],
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
+      ),
     );
   }
 
@@ -174,7 +181,7 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
                           Text(
                             _companyName?.trim().isNotEmpty == true
                                 ? _companyName!
-                                : 'Complete your company profile',
+                                : 'Your Company',
                             style: TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.bold,
@@ -196,17 +203,35 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
                   ),
                 ],
               ),
-              IconButton(
-                icon: const Icon(Icons.notifications_outlined),
-                onPressed: () {
-                  // Placeholder for notifications
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Notifications coming soon'),
-                      duration: Duration(seconds: 1),
-                    ),
-                  );
+              PopupMenuButton<String>(
+                onSelected: (value) async {
+                  if (value != 'logout') return;
+                  try {
+                    await Supabase.instance.client.auth.signOut();
+                    if (context.mounted) context.go(AppRoutes.login);
+                  } catch (e) {
+                    debugPrint('Employer logout error: $e');
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Logout failed: $e'),
+                          backgroundColor: AppColors.error,
+                        ),
+                      );
+                    }
+                  }
                 },
+                itemBuilder: (context) => const [
+                  PopupMenuItem<String>(
+                    value: 'logout',
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.logout),
+                      title: Text('Logout'),
+                    ),
+                  ),
+                ],
+                icon: const Icon(Icons.more_vert),
               ),
             ],
           ),
@@ -289,7 +314,7 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: const Center(
-                  child: const Icon(
+                  child: Icon(
                     Icons.business_outlined,
                     size: 28,
                     color: AppColors.primary,
@@ -333,7 +358,7 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
             ),
             child: const Text(
               'View company profile',
-              style: const TextStyle(
+              style: TextStyle(
                 color: AppColors.primary,
                 fontWeight: FontWeight.w600,
               ),
@@ -408,39 +433,71 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
           style: TextStyle(fontSize: 13, color: AppColors.textSec(context)),
         ),
         const SizedBox(height: 16),
-        GridView.count(
-          crossAxisCount: 2,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-          childAspectRatio: 1.2,
-          children: [
-            _buildStatCard(
-              context,
-              'Jobs Posted',
-              '$_jobsPosted',
-              Icons.work_outline,
-            ),
-            _buildStatCard(
-              context,
-              'Total Applicants',
-              '$_totalApplicants',
-              Icons.people_outlined,
-            ),
-            _buildStatCard(
-              context,
-              'Active Jobs',
-              '$_activeJobs',
-              Icons.check_circle_outlined,
-            ),
-            _buildStatCard(
-              context,
-              'Profile Views',
-              '—',
-              Icons.visibility_outlined,
-            ),
-          ],
+        LayoutBuilder(
+          builder: (context, constraints) => GridView.count(
+            crossAxisCount: constraints.maxWidth >= 600 ? 3 : 2,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: 1.2,
+            children: [
+              _buildStatCard(
+                context,
+                'Jobs Posted',
+                '$_jobsPosted',
+                Icons.work_outline,
+              ),
+              _buildStatCard(
+                context,
+                'Applications',
+                '${_applicationCounts['all'] ?? _totalApplicants}',
+                Icons.assignment_outlined,
+              ),
+              _buildStatCard(
+                context,
+                'Interviewing',
+                '${_applicationCounts['interviewing'] ?? 0}',
+                Icons.event_available_outlined,
+              ),
+              _buildStatCard(
+                context,
+                'Applied',
+                '${_applicationCounts['applied'] ?? 0}',
+                Icons.fiber_new_outlined,
+              ),
+              _buildStatCard(
+                context,
+                'Offered',
+                '${_applicationCounts['offered'] ?? 0}',
+                Icons.check_circle_outline,
+              ),
+              _buildStatCard(
+                context,
+                'Declined',
+                '${_applicationCounts['declined'] ?? 0}',
+                Icons.cancel_outlined,
+              ),
+              _buildStatCard(
+                context,
+                'Total Applicants',
+                '$_totalApplicants',
+                Icons.people_outlined,
+              ),
+              _buildStatCard(
+                context,
+                'Active Jobs',
+                '$_activeJobs',
+                Icons.check_circle_outlined,
+              ),
+              _buildStatCard(
+                context,
+                'Profile Views',
+                '—',
+                Icons.visibility_outlined,
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -458,32 +515,48 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
         color: AppColors.surf(context),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppColors.bord(context)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Row(
         children: [
-          Icon(icon, size: 24, color: AppColors.primary),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                value,
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.text(context),
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, size: 22, color: AppColors.primary),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.text(context),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: AppColors.textSec(context),
+                const SizedBox(height: 4),
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSec(context),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
@@ -515,6 +588,20 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
         const SizedBox(height: 12),
         _buildActionCard(
           context,
+          icon: Icons.people_alt_outlined,
+          title: 'Applications',
+          subtitle: 'Review applicants and update application stages',
+          onTap: () => Navigator.of(context)
+              .push(
+                MaterialPageRoute(
+                  builder: (_) => const EmployerApplicationsScreen(),
+                ),
+              )
+              .then((_) => _loadDashboardData()),
+        ),
+        const SizedBox(height: 12),
+        _buildActionCard(
+          context,
           icon: Icons.assignment_outlined,
           title: 'My jobs & applications',
           subtitle: 'Manage your jobs and review applications',
@@ -528,6 +615,7 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
           icon: Icons.message_outlined,
           title: 'Messages',
           subtitle: 'Chat with candidates and manage conversations',
+          showUnreadBadge: true,
           onTap: () => Navigator.of(
             context,
           ).push(MaterialPageRoute(builder: (_) => const MessagesScreen())),
@@ -558,6 +646,7 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
     required String title,
     required String subtitle,
     required VoidCallback onTap,
+    bool showUnreadBadge = false,
   }) {
     return GestureDetector(
       onTap: onTap,
@@ -578,7 +667,9 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
                 color: AppColors.primary.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(icon, size: 22, color: AppColors.primary),
+              child: showUnreadBadge
+                  ? UnreadMessageIcon(icon: icon, size: 22)
+                  : Icon(icon, size: 22, color: AppColors.primary),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -642,17 +733,24 @@ class _EmployerDashboardScreenState extends State<EmployerDashboardScreen> {
                   (app['jobs'] as Map<String, dynamic>?)?['title'] ??
                   'Unknown job';
 
-              // Extract applicant name from profiles list
+              // PostgREST returns a map for a to-one relationship and a list
+              // for some schemas; support both shapes without hiding data.
               String applicantName = 'Anonymous';
-              final profilesList = app['profiles'] as List?;
-              if (profilesList != null && profilesList.isNotEmpty) {
-                final profile = profilesList[0] as Map<String, dynamic>?;
-                applicantName = profile?['full_name'] as String? ?? 'Anonymous';
+              final applicant = app['profiles'];
+              if (applicant is Map<String, dynamic>) {
+                applicantName =
+                    applicant['full_name'] as String? ?? 'Anonymous';
+              } else if (applicant is List && applicant.isNotEmpty) {
+                final profile = applicant.first;
+                if (profile is Map<String, dynamic>) {
+                  applicantName =
+                      profile['full_name'] as String? ?? 'Anonymous';
+                }
               }
 
               final status = app['status'] as String? ?? 'applied';
               final createdAt = DateTime.tryParse(
-                app['created_at'] as String? ?? '',
+                app['applied_at'] as String? ?? '',
               );
 
               return Padding(

@@ -19,7 +19,8 @@ class AuthState {
     this.initialized = false,
   });
 
-  bool get isAuthenticated => session != null && user != null;
+  bool get isAuthenticated =>
+      SupabaseService.canAccessAuthenticatedApp(session: session, user: user);
   bool get isEmployer => isAuthenticated && role == 'employer';
   bool get isJobSeeker => isAuthenticated && role == 'job_seeker';
   bool get isAdmin => isAuthenticated && role == 'admin';
@@ -59,15 +60,20 @@ class AuthNotifier extends ChangeNotifier {
     final user = Supabase.instance.client.auth.currentUser;
     String? role;
 
-    if (session != null && user != null) {
-      final profile = await SupabaseService.getProfile(user.id);
-      final rawRoleFromMetadata = user.userMetadata?['account_type'] as String?;
+    if (SupabaseService.canAccessAuthenticatedApp(
+      session: session,
+      user: user,
+    )) {
+      final authenticatedUser = user!;
+      final profile = await SupabaseService.getProfile(authenticatedUser.id);
+      final rawRoleFromMetadata =
+          authenticatedUser.userMetadata?['account_type'] as String?;
 
       if (profile == null) {
         await SupabaseService.createProfile(
-          user.id,
-          email: user.email,
-          fullName: user.userMetadata?['full_name'] as String?,
+          authenticatedUser.id,
+          email: authenticatedUser.email,
+          fullName: authenticatedUser.userMetadata?['full_name'] as String?,
           accountType: rawRoleFromMetadata,
         );
         role =
@@ -80,15 +86,6 @@ class AuthNotifier extends ChangeNotifier {
             ? rawRoleFromMetadata
             : rawRole;
 
-        final profileEmail = profile['email'] as String?;
-        if ((profileEmail == null || profileEmail.trim().isEmpty) &&
-            user.email != null &&
-            user.email!.trim().isNotEmpty) {
-          await SupabaseService.updateProfile(user.id, {
-            'email': user.email!.trim(),
-          });
-        }
-
         if (rawRoleToUse == null || rawRoleToUse.trim().isEmpty) {
           role = null;
         } else {
@@ -97,12 +94,14 @@ class AuthNotifier extends ChangeNotifier {
             rawRoleToUse,
           );
           if (rawRole != normalizedRole) {
-            await SupabaseService.updateProfile(user.id, {
+            await SupabaseService.updateProfile(authenticatedUser.id, {
               'account_type': normalizedRole,
             });
           }
         }
       }
+    } else {
+      role = null;
     }
 
     _state = AuthState(

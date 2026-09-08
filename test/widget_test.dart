@@ -1,30 +1,106 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:jobsearch_app/main.dart';
+import 'package:jobsearch_app/core/supabase/supabase_service.dart';
+import 'package:jobsearch_app/core/services/ai_service.dart';
+import 'package:jobsearch_app/core/services/match_score_service.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  group('SupabaseService auth and salary guard logic', () {
+    test('normalizes account types consistently', () {
+      expect(SupabaseService.normalizeAccountType('job_seeker'), 'job_seeker');
+      expect(SupabaseService.normalizeAccountType('Job Seeker'), 'job_seeker');
+      expect(SupabaseService.normalizeAccountType('Employer'), 'employer');
+      expect(SupabaseService.normalizeAccountType('admin'), 'admin');
+      expect(SupabaseService.normalizeAccountType('unknown'), 'unknown');
+    });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    test('treats confirmed emails as active and unconfirmed as blocked', () {
+      expect(
+        SupabaseService.isEmailConfirmedAt('2026-09-02T00:00:00Z'),
+        isTrue,
+      );
+      expect(SupabaseService.isEmailConfirmedAt(null), isFalse);
+      expect(SupabaseService.isEmailConfirmedAt(''), isFalse);
+    });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    test(
+      'formats Ghana Cedi salaries without inconsistent currency output',
+      () {
+        expect(
+          SupabaseService.formatSalaryDisplay(
+            min: 3000,
+            max: 5000,
+            currency: 'GHS',
+          ),
+          'GH₵3,000 - GH₵5,000',
+        );
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+        expect(
+          SupabaseService.formatSalaryDisplay(
+            min: 3000,
+            max: 3000,
+            currency: 'GHS',
+          ),
+          'GH₵3,000',
+        );
+        expect(
+          SupabaseService.formatSalaryDisplay(min: 3000, currency: 'GHS'),
+          'GH₵3,000',
+        );
+        expect(
+          SupabaseService.formatSalaryDisplay(
+            min: 3000,
+            max: 5000,
+            currency: 'USD',
+          ),
+          'GH₵3,000 - GH₵5,000',
+        );
+      },
+    );
+
+    test(
+      'match score uses job requirements and changes with candidate evidence',
+      () {
+        final job = {
+          'title': 'Flutter Developer',
+          'description': 'Build mobile applications.',
+          'required_skills': ['Flutter', 'Dart', 'Firebase'],
+        };
+        final strong = MatchScoreService.calculateDetailed(
+          job: job,
+          userSkillNames: ['Flutter', 'Dart'],
+          resumeText: 'Flutter Dart Firebase developer',
+        );
+        final weak = MatchScoreService.calculateDetailed(
+          job: job,
+          userSkillNames: ['Accounting'],
+          resumeText: 'Accounting and auditing experience',
+        );
+
+        expect(
+          strong.matchedSkills,
+          containsAll(['Flutter', 'Dart', 'Firebase']),
+        );
+        expect(strong.missingSkills, isEmpty);
+        expect(
+          weak.missingSkills,
+          containsAll(['Flutter', 'Dart', 'Firebase']),
+        );
+        expect(strong.totalScore, greaterThan(weak.totalScore));
+      },
+    );
+
+    test('AI match response validation rejects invalid scores', () {
+      expect(AiService.parseJobMatchResponse({'match_score': 101}), isNull);
+
+      final result = AiService.parseJobMatchResponse({
+        'match_score': 82.7,
+        'matching_skills': ['Flutter'],
+        'missing_skills': ['Docker'],
+        'recommendations': ['Learn Docker'],
+      });
+      expect(result?['match_score'], 83);
+      expect(result?['matching_skills'], ['Flutter']);
+      expect(result?['missing_skills'], ['Docker']);
+    });
   });
 }

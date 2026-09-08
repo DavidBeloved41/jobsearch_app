@@ -57,6 +57,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         return;
       }
       final profile = await SupabaseService.getProfile(userId);
+      final jobSeekerProfile = await SupabaseService.getJobSeekerProfile(
+        userId,
+      );
       if (profile != null) {
         _fullNameController.text = profile['full_name'] ?? '';
         _phoneController.text = profile['phone_number'] ?? '';
@@ -72,13 +75,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           _isOpenToWork = profile['is_open_to_work'] ?? true;
           _profilePhotoUrl = profile['profile_photo_url'];
           _preferredWorkModel =
-              profile['preferred_work_model'] as String? ?? 'all';
+              jobSeekerProfile?['preferred_work_model'] as String? ?? 'all';
           _preferredEmploymentType =
-              profile['preferred_employment_type'] as String? ?? 'all';
+              jobSeekerProfile?['preferred_employment_type'] as String? ??
+              'all';
           _desiredMinSalaryController.text =
-              profile['desired_min_salary']?.toString() ?? '';
+              jobSeekerProfile?['desired_min_salary']?.toString() ?? '';
           _desiredMaxSalaryController.text =
-              profile['desired_max_salary']?.toString() ?? '';
+              jobSeekerProfile?['desired_max_salary']?.toString() ?? '';
         });
       }
     } catch (e) {
@@ -240,8 +244,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         'updated_at': DateTime.now().toIso8601String(),
       };
       if (_accountType == 'job_seeker') {
-        profileData.addAll({
+        final jobSeekerData = <String, dynamic>{
           'is_open_to_work': _isOpenToWork,
+        };
+        final preferenceData = <String, dynamic>{
           'preferred_work_model': _preferredWorkModel,
           'preferred_employment_type': _preferredEmploymentType,
           'desired_min_salary': int.tryParse(
@@ -250,8 +256,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           'desired_max_salary': int.tryParse(
             _desiredMaxSalaryController.text.trim(),
           ),
-        });
+        };
+        profileData.addAll(jobSeekerData);
+        debugPrint(
+          '[JOB SEEKER PROFILE UPDATE] fields being sent: ${preferenceData.keys.join(', ')}',
+        );
+        await SupabaseService.upsertJobSeekerProfile(userId, preferenceData);
       }
+      debugPrint('[PROFILE UPDATE] userId: $userId');
+      debugPrint(
+        '[PROFILE UPDATE] fields being sent: ${profileData.keys.join(', ')}',
+      );
       await SupabaseService.updateProfile(userId, profileData);
 
       if (mounted) {
@@ -610,8 +625,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                               controller: _desiredMinSalaryController,
                               keyboardType: TextInputType.number,
                               decoration: const InputDecoration(
-                                labelText: 'Min salary',
-                                prefixText: '\$ ',
+                                labelText: 'Min salary (GH₵)',
                               ),
                             ),
                           ),
@@ -621,8 +635,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                               controller: _desiredMaxSalaryController,
                               keyboardType: TextInputType.number,
                               decoration: const InputDecoration(
-                                labelText: 'Max salary',
-                                prefixText: '\$ ',
+                                labelText: 'Max salary (GH₵)',
                               ),
                             ),
                           ),

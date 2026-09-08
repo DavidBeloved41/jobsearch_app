@@ -32,6 +32,23 @@ class BiometricService {
     }
   }
 
+  static Future<String?> unavailableReason() async {
+    try {
+      if (!await _auth.isDeviceSupported()) return 'unsupported';
+      if (!await _auth.canCheckBiometrics) return 'unavailable';
+      if ((await _auth.getAvailableBiometrics()).isEmpty) return 'not_enrolled';
+      return null;
+    } on PlatformException catch (error) {
+      debugPrint(
+        'BiometricService: capability check failed code=${error.code}',
+      );
+      return 'platform_error';
+    } catch (error) {
+      debugPrint('BiometricService: capability check failed: $error');
+      return 'platform_error';
+    }
+  }
+
   static Future<List<BiometricType>> getAvailableBiometrics() async {
     try {
       return await _auth.getAvailableBiometrics();
@@ -47,9 +64,9 @@ class BiometricService {
       final result = await _auth.authenticate(
         localizedReason: reason,
         options: const AuthenticationOptions(
-          biometricOnly: false,
+          biometricOnly: true,
           stickyAuth: true,
-          sensitiveTransaction: false,
+          sensitiveTransaction: true,
         ),
       );
       debugPrint('BiometricService: authenticate result=$result');

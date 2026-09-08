@@ -29,26 +29,22 @@ class AppColors {
   // Theme-aware color helpers
   static Color bg(BuildContext context) =>
       Theme.of(context).brightness == Brightness.dark
-          ? backgroundDark
-          : background;
+      ? backgroundDark
+      : background;
 
   static Color surf(BuildContext context) =>
-      Theme.of(context).brightness == Brightness.dark
-          ? surfaceDark
-          : surface;
+      Theme.of(context).brightness == Brightness.dark ? surfaceDark : surface;
 
   static Color text(BuildContext context) =>
       Theme.of(context).brightness == Brightness.dark
-          ? textPrimaryDark
-          : textPrimary;
+      ? textPrimaryDark
+      : textPrimary;
 
   static Color textSec(BuildContext context) =>
       Theme.of(context).brightness == Brightness.dark
-          ? textSecondaryDark
-          : textSecondary;
+      ? textSecondaryDark
+      : textSecondary;
 
   static Color bord(BuildContext context) =>
-      Theme.of(context).brightness == Brightness.dark
-          ? borderDark
-          : border;
+      Theme.of(context).brightness == Brightness.dark ? borderDark : border;
 }

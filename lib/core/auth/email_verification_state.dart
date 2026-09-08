@@ -1,9 +1,10 @@
-enum EmailVerificationStatus { initial, submitting, sent, error }
+enum EmailVerificationStatus { initial, submitting, sent, verified, error }
 
 class EmailVerificationState {
   final String email;
   final bool isLoading;
   final bool emailSent;
+  final bool verificationSucceeded;
   final String? errorMessage;
   final EmailVerificationStatus status;
 
@@ -11,6 +12,7 @@ class EmailVerificationState {
     this.email = '',
     this.isLoading = false,
     this.emailSent = false,
+    this.verificationSucceeded = false,
     this.errorMessage,
     this.status = EmailVerificationStatus.initial,
   });
@@ -21,6 +23,7 @@ class EmailVerificationState {
     String? email,
     bool? isLoading,
     bool? emailSent,
+    bool? verificationSucceeded,
     String? errorMessage,
     EmailVerificationStatus? status,
   }) {
@@ -28,6 +31,8 @@ class EmailVerificationState {
       email: email ?? this.email,
       isLoading: isLoading ?? this.isLoading,
       emailSent: emailSent ?? this.emailSent,
+      verificationSucceeded:
+          verificationSucceeded ?? this.verificationSucceeded,
       errorMessage: errorMessage,
       status: status ?? this.status,
     );
